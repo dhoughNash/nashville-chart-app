@@ -619,14 +619,14 @@
 
   .bar-diamond {
     position: relative;
-    width: 46px;
-    height: 46px;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .bar-diamond svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .bar-diamond span { font-family: 'Architects Daughter', cursive; font-size: 17px; color: var(--ink); -webkit-text-stroke: 0.75px var(--ink); position: relative; }
+  .bar-diamond span { font-family: 'Architects Daughter', cursive; font-size: 14px; color: var(--ink); -webkit-text-stroke: 0.6px var(--ink); position: relative; }
 
   .group-dot {
     width: 5px; height: 5px; border-radius: 50%;
@@ -650,8 +650,8 @@
     transform: translateX(-50%);
     font-family: 'Architects Daughter', cursive;
     font-size: 15px;
-    color: var(--red);
-    -webkit-text-stroke: 0.4px var(--red);
+    color: var(--ink);
+    -webkit-text-stroke: 0.4px var(--ink);
     pointer-events: none;
   }
 
@@ -663,7 +663,7 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--red);
+    background: var(--ink);
     pointer-events: none;
   }
 
@@ -671,11 +671,10 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 40px;
-    height: 40px;
+    width: 28px;
+    height: 28px;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    z-index: -1;
   }
 
   /* --- edit-mode tool palette (Photoshop-style side panel) --- */
@@ -1956,7 +1955,14 @@ function renderChartView(data) {
     e.preventDefault(); // block the contenteditable focus/cursor from opening
     const path = JSON.parse(target.getAttribute('data-path'));
     if (activeMarkTool === 'diamond') {
-      if (path.length === 3 && path[0] === 'bar') {
+      // A plain bar's path is ['bar', secIdx, barIdx] (length 3). Once it's
+      // already a diamond, its numeral's own path gains a trailing
+      // 'diamond' segment (length 4) -- recognize both shapes so clicking
+      // an existing diamond again correctly toggles it back off instead of
+      // silently failing to match.
+      const isPlainBar = path.length === 3 && path[0] === 'bar';
+      const isExistingDiamond = path.length === 4 && path[0] === 'bar' && path[3] === 'diamond';
+      if (isPlainBar || isExistingDiamond) {
         toggleDiamond(path[1], path[2]);
       } else {
         showToast('Sustain only applies to a whole bar, not part of a split or group.');
