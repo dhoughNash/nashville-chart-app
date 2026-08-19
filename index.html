@@ -594,6 +594,43 @@
     .section-label { width: auto; }
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
   }
+
+  /* --- print / save-as-PDF --- */
+  @media print {
+    @page {
+      margin: 0.5in;
+    }
+
+    /* strip the dark binder shell entirely -- only the chart page prints */
+    body {
+      background: #fff;
+      background-image: none;
+    }
+
+    .topnav, .save-toast, .no-print {
+      display: none !important;
+    }
+
+    .view, .no-print-parent {
+      max-width: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .sheet {
+      max-width: none;
+      width: 100%;
+      margin: 0;
+      box-shadow: none;
+      border: none;
+      padding: 0;
+    }
+
+    /* editing affordances (dashed hover lines) are meaningless on paper */
+    [contenteditable="true"] {
+      border-bottom: none !important;
+    }
+  }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -1524,11 +1561,12 @@ function renderChartView(data) {
     : 'Click any chord or label to edit it directly.';
 
   viewContainer.innerHTML = `
-    <div class="view">
-      <div class="chart-view-toolbar">
+    <div class="view no-print-parent">
+      <div class="chart-view-toolbar no-print">
         <span class="edit-hint">${hintText}</span>
         <div class="toolbar-actions">
           <button class="shell-btn secondary" id="modeToggleBtn">${displayMode === 'numbers' ? 'Show Chords' : 'Show Numbers'}</button>
+          <button class="shell-btn secondary" id="printBtn">Print / Save PDF</button>
           <button class="shell-btn secondary" id="backBtn">← Library</button>
           <button class="shell-btn" id="saveBtn">Save to Library</button>
         </div>
@@ -1538,6 +1576,7 @@ function renderChartView(data) {
   `;
 
   document.getElementById('backBtn').addEventListener('click', () => renderLibraryView());
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
   document.getElementById('saveBtn').addEventListener('click', async () => {
     currentChartId = await saveChartToLibrary(currentData, currentChartId);
     showToast('Saved to library');
