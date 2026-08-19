@@ -280,6 +280,50 @@
     display: none;
   }
 
+  .drop-zone {
+    position: relative;
+    border: 2px dashed var(--shell-edge);
+    border-radius: 8px;
+    min-height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--brass);
+    background: rgba(184, 146, 90, 0.06);
+  }
+  .drop-zone-text {
+    font-family: 'Public Sans', sans-serif;
+    font-size: 13px;
+    color: var(--shell-text-dim);
+    pointer-events: none;
+  }
+  .drop-zone-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .key-manage-link {
+    margin-top: 12px;
+    text-align: right;
+  }
+  .key-manage-link a {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--shell-text-dim);
+    text-decoration: none;
+  }
+  .key-manage-link a:hover { color: var(--brass); }
+
   .field { margin-bottom: 14px; }
 
   .field label {
@@ -579,12 +623,24 @@ const saveToast = document.getElementById('saveToast');
 let currentData = null;      // chart currently open in the chart view
 let currentChartId = null;   // storage id of the currently open chart, if it's a saved one
 
-// Session-only credential/config memory: persists while this page/tab stays
-// open (so switching between Library and New Chart doesn't clear it), but
-// resets on reload -- deliberately not saved to persistent storage yet.
-let savedMusicAiKey = '';
-let savedChordsWorkflowSlug = 'untitled-workflow-40fd1d9';
-let savedSectionsWorkflowSlug = 'untitled-workflow-40fe1ea';
+// Workflow slugs are fixed for this account -- no need to expose them as
+// editable fields in the UI.
+const CHORDS_WORKFLOW_SLUG = 'untitled-workflow-40fd1d9';
+const SECTIONS_WORKFLOW_SLUG = 'untitled-workflow-40fe1ea';
+
+// Music AI API key -- saved in localStorage so it's entered once, then
+// never shown or re-typed again. Unlike the Google token (deliberately
+// memory-only for security), this key is a low-stakes personal-tool
+// credential the person explicitly asked to persist.
+function getStoredApiKey() {
+  try { return localStorage.getItem('musicAiApiKey') || ''; } catch (e) { return ''; }
+}
+function setStoredApiKey(key) {
+  try { localStorage.setItem('musicAiApiKey', key); } catch (e) {}
+}
+function clearStoredApiKey() {
+  try { localStorage.removeItem('musicAiApiKey'); } catch (e) {}
+}
 
 // ============================================================
 // Ported from nashville.py -- lets the app process audio directly
@@ -1260,27 +1316,31 @@ function renderUploadView() {
       <div class="upload-panel">
         <h2 class="panel-heading">Process a song directly</h2>
         <p>Drop in an audio file and this handles chords, key, tempo, and song structure automatically via Music AI -- no Colab needed.</p>
-        <div class="field">
-          <label for="musicAiKey">Music AI API Key</label>
-          <input type="password" id="musicAiKey" placeholder="your key" value="${savedMusicAiKey}">
+
+        <div id="apiKeySetup" style="display:${getStoredApiKey() ? 'none' : 'block'}">
+          <div class="field">
+            <label for="musicAiKeySetup">Music AI API Key (saved once, never shown again)</label>
+            <input type="password" id="musicAiKeySetup" placeholder="paste your key">
+          </div>
+          <div class="btn-row">
+            <button class="shell-btn" id="saveKeyBtn">Save Key</button>
+          </div>
         </div>
-        <div class="field">
-          <label for="chordsWorkflowSlug">Chords &amp; Beats Workflow Slug</label>
-          <input type="text" id="chordsWorkflowSlug" value="${savedChordsWorkflowSlug}">
+
+        <div id="dropZone" class="drop-zone" style="display:${getStoredApiKey() ? 'flex' : 'none'}">
+          <div class="drop-zone-text" id="dropZoneText">Drop an audio file here, or click to choose one</div>
+          <input type="file" id="processAudioFile" accept="audio/*" class="drop-zone-input">
         </div>
-        <div class="field">
-          <label for="sectionsWorkflowSlug">Sections Workflow Slug (optional)</label>
-          <input type="text" id="sectionsWorkflowSlug" value="${savedSectionsWorkflowSlug}">
-        </div>
-        <div class="field">
-          <label for="processAudioFile">Audio File</label>
-          <input type="file" id="processAudioFile" accept="audio/*">
-        </div>
-        <div class="btn-row">
+
+        <div class="btn-row" id="processBtnRow" style="display:none">
           <button class="shell-btn" id="processBtn">Process &amp; Open Chart</button>
         </div>
+
         <div class="process-log" id="processLog"></div>
         <div id="processErrorMsg"></div>
+        <div class="key-manage-link" id="keyManageLink" style="display:${getStoredApiKey() ? 'block' : 'none'}">
+          <a href="#" id="changeKeyLink">Change API key</a>
+        </div>
       </div>
 
       <div class="panel-divider">or</div>
@@ -1351,18 +1411,17 @@ function renderUploadView() {
 
   // --- direct audio processing panel ---
   const processBtn = document.getElementById('processBtn');
+  const processBtnRow = document.getElementById('processBtnRow');
   const processLog = document.getElementById('processLog');
   const processErrorMsg = document.getElementById('processErrorMsg');
-  const musicAiKeyInput = document.getElementById('musicAiKey');
-  const chordsSlugInput = document.getElementById('chordsWorkflowSlug');
-  const sectionsSlugInput = document.getElementById('sectionsWorkflowSlug');
-
-  // Keep the session-memory variables in sync as the person types, so the
-  // values survive switching to Library and back without needing to click
-  // "Process" first.
-  musicAiKeyInput.addEventListener('input', () => { savedMusicAiKey = musicAiKeyInput.value; });
-  chordsSlugInput.addEventListener('input', () => { savedChordsWorkflowSlug = chordsSlugInput.value; });
-  sectionsSlugInput.addEventListener('input', () => { savedSectionsWorkflowSlug = sectionsSlugInput.value; });
+  const apiKeySetup = document.getElementById('apiKeySetup');
+  const musicAiKeySetupInput = document.getElementById('musicAiKeySetup');
+  const saveKeyBtn = document.getElementById('saveKeyBtn');
+  const dropZone = document.getElementById('dropZone');
+  const dropZoneText = document.getElementById('dropZoneText');
+  const audioFileInput = document.getElementById('processAudioFile');
+  const keyManageLink = document.getElementById('keyManageLink');
+  const changeKeyLink = document.getElementById('changeKeyLink');
 
   function processLogLine(msg) {
     const line = document.createElement('div');
@@ -1373,17 +1432,74 @@ function renderUploadView() {
   function showProcessError(msg) { processErrorMsg.textContent = msg; processErrorMsg.style.display = 'block'; }
   function clearProcessError() { processErrorMsg.style.display = 'none'; }
 
+  function showKeySetup() {
+    apiKeySetup.style.display = 'block';
+    dropZone.style.display = 'none';
+    processBtnRow.style.display = 'none';
+    keyManageLink.style.display = 'none';
+  }
+  function showDropZone() {
+    apiKeySetup.style.display = 'none';
+    dropZone.style.display = 'flex';
+    keyManageLink.style.display = 'block';
+  }
+
+  saveKeyBtn.addEventListener('click', () => {
+    const key = musicAiKeySetupInput.value.trim();
+    if (!key) return;
+    setStoredApiKey(key);
+    musicAiKeySetupInput.value = '';
+    showDropZone();
+  });
+
+  changeKeyLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    showKeySetup();
+  });
+
+  function setSelectedFile(file) {
+    if (!file) return;
+    dropZoneText.textContent = file.name;
+    processBtnRow.style.display = 'flex';
+    clearProcessError();
+  }
+
+  audioFileInput.addEventListener('change', () => {
+    setSelectedFile(audioFileInput.files[0]);
+  });
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('audio/')) {
+      showProcessError('That doesn\'t look like an audio file.');
+      return;
+    }
+    // reflect the dropped file into the real file input so the same
+    // "read the file input" logic works regardless of drop vs click
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    audioFileInput.files = dt.files;
+    setSelectedFile(file);
+  });
+
   processBtn.addEventListener('click', async () => {
     clearProcessError();
     processLog.innerHTML = '';
 
-    const apiKey = musicAiKeyInput.value.trim();
-    const chordsSlug = chordsSlugInput.value.trim();
-    const sectionsSlug = sectionsSlugInput.value.trim();
-    const audioFile = document.getElementById('processAudioFile').files[0];
+    const apiKey = getStoredApiKey();
+    const audioFile = audioFileInput.files[0];
 
-    if (!apiKey) { showProcessError('Enter your Music AI API key first.'); return; }
-    if (!chordsSlug) { showProcessError('Enter the Chords & Beats workflow slug.'); return; }
+    if (!apiKey) { showKeySetup(); showProcessError('Enter your Music AI API key first.'); return; }
     if (!audioFile) { showProcessError('Choose an audio file first.'); return; }
 
     processBtn.disabled = true;
@@ -1391,7 +1507,7 @@ function renderUploadView() {
 
     try {
       const chartData = await processAudioWithMusicAi(
-        apiKey, chordsSlug, sectionsSlug || null, audioFile, processLogLine
+        apiKey, CHORDS_WORKFLOW_SLUG, SECTIONS_WORKFLOW_SLUG, audioFile, processLogLine
       );
       processLogLine('Done. Opening chart...');
       currentChartId = null;
