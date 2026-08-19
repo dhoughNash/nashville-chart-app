@@ -664,10 +664,10 @@
   .bar-split .split-bottom { bottom: -1px; right: 0; }
 
   /* wider variant for chord-name display (e.g. "A#" needs more room than "1") */
-  .bar-split.wide { width: 34px; height: 34px; }
-  .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 13px; }
-  .bar-split.wide .split-top { top: -3px; left: -1px; }
-  .bar-split.wide .split-bottom { bottom: -3px; right: -1px; }
+  .bar-split.wide { width: 26px; height: 26px; }
+  .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 11px; }
+  .bar-split.wide .split-top { top: -3px; left: -2px; }
+  .bar-split.wide .split-bottom { bottom: -3px; right: -2px; }
 
   .bar-group {
     position: relative;
@@ -1917,8 +1917,8 @@ function renderBar(bar, path) {
   }
   if (bar.split) {
     const wide = displayMode === 'chords';
-    const boxSize = wide ? 34 : 20;
-    const lineMargin = wide ? 4 : 2;
+    const boxSize = wide ? 26 : 20;
+    const lineMargin = wide ? 3 : 2;
     const lineFar = boxSize - lineMargin;
     return `
       <span class="bar-split${wide ? ' wide' : ''}">
@@ -1936,10 +1936,16 @@ function renderBar(bar, path) {
     return wrapWithMarks([...path, 'diamond'], inner);
   }
   if (bar.group) {
+    // Chord names are wider than plain numerals, so groups need a bit more
+    // breathing room in chords mode regardless of content -- but a group
+    // that also contains a split-bar sub-item needs noticeably more
+    // compensation than a plain two-chord group does.
     const wide = displayMode === 'chords';
+    const containsSplit = bar.group.some(item => item && typeof item === 'object' && item.split);
+    const gapPx = wide ? (containsSplit ? 5 : 9) : 14;
     const innerHtml = bar.group.map((item, i) => renderBar(item, [...path, 'group', i])).join('');
     return `
-      <span class="bar-group${wide ? ' wide' : ''}">
+      <span class="bar-group" style="gap:${gapPx}px">
         ${innerHtml}
         <svg class="group-underline" viewBox="0 0 100 12" preserveAspectRatio="none">
           <line x1="0" y1="3" x2="100" y2="3" stroke="var(--ink)" stroke-width="1.4"/>
