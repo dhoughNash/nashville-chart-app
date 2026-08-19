@@ -79,6 +79,31 @@
     background: var(--brass);
   }
 
+  .auth-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auth-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--shell-text-dim);
+  }
+
+  .auth-btn {
+    background: transparent;
+    border: 1px solid var(--shell-edge);
+    color: var(--shell-text-dim);
+    font-family: 'Public Sans', sans-serif;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .auth-btn:hover { color: var(--shell-text); border-color: var(--brass); }
+
   /* --- shared layout --- */
 
   .view {
@@ -526,6 +551,7 @@
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -537,6 +563,7 @@
       <button class="nav-tab" id="tabLibrary">Library</button>
       <button class="nav-tab" id="tabNew">New Chart</button>
     </div>
+    <div id="authStatus" class="auth-status"></div>
   </nav>
 
   <div id="viewContainer"></div>
@@ -904,22 +931,173 @@ const DEMO = {
   ]
 };
 
+// ---------- Google Drive sign-in ----------
+// Uses the Drive "appDataFolder" -- a hidden folder scoped to just this app,
+// so charts never clutter the person's regular visible Drive. Falls back to
+// localStorage automatically when not signed in.
+
+const GOOGLE_CLIENT_ID = '451996104682-kj3dmo065dt1e4jh8to95j3etj473g6q.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+
+let driveAccessToken = null; // session-only, in-memory -- never persisted
+let driveSignedIn = false;
+let googleTokenClient = null;
+
+function initGoogleAuth() {
+  if (googleTokenClient || typeof google === 'undefined') return;
+  googleTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (tokenResponse) => {
+      if (tokenResponse.error) {
+        showToast('Google sign-in failed: ' + tokenResponse.error);
+        return;
+      }
+      driveAccessToken = tokenResponse.access_token;
+      driveSignedIn = true;
+      showToast('Signed in with Google');
+      updateAuthUI();
+      if (document.getElementById('libraryContent')) renderLibraryView();
+    },
+  });
+}
+
+function signInWithGoogle() {
+  if (!googleTokenClient) initGoogleAuth();
+  if (googleTokenClient) googleTokenClient.requestAccessToken();
+}
+
+function signOutGoogle() {
+  if (driveAccessToken && typeof google !== 'undefined') {
+    google.accounts.oauth2.revoke(driveAccessToken, () => {});
+  }
+  driveAccessToken = null;
+  driveSignedIn = false;
+  updateAuthUI();
+  if (document.getElementById('libraryContent')) renderLibraryView();
+}
+
+function updateAuthUI() {
+  const el = document.getElementById('authStatus');
+  if (!el) return;
+  el.innerHTML = driveSignedIn
+    ? `<span class="auth-label">Synced to Drive</span><button class="auth-btn" id="signOutBtn">Sign out</button>`
+    : `<button class="auth-btn" id="signInBtn">Sign in with Google</button>`;
+  const signInBtn = document.getElementById('signInBtn');
+  if (signInBtn) signInBtn.addEventListener('click', signInWithGoogle);
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (signOutBtn) signOutBtn.addEventListener('click', signOutGoogle);
+}
+
+async function driveApiFetch(url, options = {}) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), 'Authorization': `Bearer ${driveAccessToken}` },
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Drive API error: HTTP ${resp.status} - ${text}`);
+  }
+  return resp;
+}
+
+async function getChartsIndexFromDrive() {
+  const resp = await driveApiFetch(
+    'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,appProperties,modifiedTime)&orderBy=modifiedTime desc&pageSize=100'
+  );
+  const data = await resp.json();
+  return (data.files || []).map(f => ({
+    id: f.id,
+    title: (f.appProperties && f.appProperties.title) || 'Untitled',
+    key: (f.appProperties && f.appProperties.key) || '',
+    tempo: (f.appProperties && f.appProperties.tempo) || '',
+    sectionCount: parseInt((f.appProperties && f.appProperties.sectionCount) || '0', 10),
+    updatedAt: new Date(f.modifiedTime).getTime(),
+  }));
+}
+
+async function saveChartToDrive(data, existingId) {
+  const appProperties = {
+    title: data.title || 'Untitled',
+    key: data.key || '',
+    tempo: data.tempo || '',
+    sectionCount: String((data.sections || []).length),
+  };
+  const content = JSON.stringify(data);
+
+  if (existingId) {
+    await driveApiFetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: content,
+    });
+    await driveApiFetch(`https://www.googleapis.com/drive/v3/files/${existingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appProperties }),
+    });
+    return existingId;
+  }
+
+  const metadata = { name: `chart-${Date.now()}.json`, parents: ['appDataFolder'], appProperties };
+  const boundary = 'nashville_chart_boundary_' + Date.now();
+  const multipartBody =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: application/json\r\n\r\n` +
+    `${content}\r\n` +
+    `--${boundary}--`;
+
+  const resp = await driveApiFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: multipartBody,
+  });
+  const created = await resp.json();
+  return created.id;
+}
+
+async function loadChartFromDrive(id) {
+  const resp = await driveApiFetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+  return await resp.json();
+}
+
+async function deleteChartFromDrive(id) {
+  await driveApiFetch(`https://www.googleapis.com/drive/v3/files/${id}`, { method: 'DELETE' });
+}
+
 // ---------- persistent storage helpers ----------
 // Index: "charts-index" -> array of {id, title, key, tempo, sectionCount, updatedAt}
 // Each chart's full data: "chart:<id>" -> the chart JSON
+//
+// Uses localStorage -- a standard browser feature that works on any real
+// website (unlike window.storage, which only exists inside Claude's own
+// artifact preview and would silently fail once deployed standalone).
+// Trade-off: this is per-browser/per-device, not synced across devices.
+// A future Google Drive integration can layer on top of these same function
+// signatures without touching any of the calling code elsewhere in the app.
 
 async function getChartsIndex() {
+  if (driveSignedIn) {
+    try { return await getChartsIndexFromDrive(); }
+    catch (e) { console.error(e); showToast('Drive error, showing local charts'); }
+  }
   try {
-    const result = await window.storage.get('charts-index', false);
-    return result ? JSON.parse(result.value) : [];
+    const raw = localStorage.getItem('charts-index');
+    return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
   }
 }
 
 async function saveChartToLibrary(data, existingId) {
+  if (driveSignedIn) {
+    return await saveChartToDrive(data, existingId);
+  }
   const id = existingId || `c${Date.now()}`;
-  await window.storage.set(`chart:${id}`, JSON.stringify(data), false);
+  localStorage.setItem(`chart:${id}`, JSON.stringify(data));
   const index = await getChartsIndex();
   const entry = {
     id,
@@ -931,20 +1109,26 @@ async function saveChartToLibrary(data, existingId) {
   };
   const filtered = index.filter(e => e.id !== id);
   filtered.unshift(entry);
-  await window.storage.set('charts-index', JSON.stringify(filtered), false);
+  localStorage.setItem('charts-index', JSON.stringify(filtered));
   return id;
 }
 
 async function loadChartFromLibrary(id) {
-  const result = await window.storage.get(`chart:${id}`, false);
-  return result ? JSON.parse(result.value) : null;
+  if (driveSignedIn) {
+    return await loadChartFromDrive(id);
+  }
+  const raw = localStorage.getItem(`chart:${id}`);
+  return raw ? JSON.parse(raw) : null;
 }
 
 async function deleteChartFromLibrary(id) {
-  try { await window.storage.delete(`chart:${id}`, false); } catch (e) {}
+  if (driveSignedIn) {
+    return await deleteChartFromDrive(id);
+  }
+  try { localStorage.removeItem(`chart:${id}`); } catch (e) {}
   const index = await getChartsIndex();
   const filtered = index.filter(e => e.id !== id);
-  await window.storage.set('charts-index', JSON.stringify(filtered), false);
+  localStorage.setItem('charts-index', JSON.stringify(filtered));
 }
 
 // ---------- nav ----------
@@ -1356,6 +1540,7 @@ function renderChartView(data) {
 }
 
 // ---------- boot ----------
+updateAuthUI();
 renderLibraryView();
 </script>
 </body>
