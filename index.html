@@ -1619,6 +1619,33 @@ function renderChartView(data) {
   });
 }
 
+// ---------- auto-condense to one printed page ----------
+// @page margins only define the printable area -- they don't shrink content
+// that's taller than one page. This measures the actual rendered chart
+// height right before printing and scales it down to fit, using `zoom`
+// (not `transform`) because zoom genuinely resizes the box in the layout
+// engine, which is what the print pagination logic actually reads --
+// transform only changes the visual appearance after layout, so it
+// wouldn't affect how many pages the browser decides to print.
+const PRINT_PAGE_HEIGHT_BUDGET_PX = 900; // conservative estimate for one page at 0.5in margins
+const PRINT_MIN_ZOOM = 0.45; // floor so extremely long charts don't shrink to unreadable
+
+window.addEventListener('beforeprint', () => {
+  const sheet = document.getElementById('sheet');
+  if (!sheet) return;
+  sheet.style.zoom = '1';
+  const naturalHeight = sheet.scrollHeight;
+  if (naturalHeight > PRINT_PAGE_HEIGHT_BUDGET_PX) {
+    const scale = Math.max(PRINT_MIN_ZOOM, PRINT_PAGE_HEIGHT_BUDGET_PX / naturalHeight);
+    sheet.style.zoom = String(scale);
+  }
+});
+
+window.addEventListener('afterprint', () => {
+  const sheet = document.getElementById('sheet');
+  if (sheet) sheet.style.zoom = '';
+});
+
 // ---------- boot ----------
 updateAuthUI();
 attemptSilentSignIn();
