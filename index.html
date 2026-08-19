@@ -685,6 +685,16 @@
     pointer-events: none;
   }
 
+  .bar-tie {
+    position: absolute;
+    top: -13px;
+    right: -18px;
+    width: 28px;
+    height: 11px;
+    pointer-events: none;
+    z-index: 4;
+  }
+
   /* --- edit-mode tool palette (Photoshop-style side panel) --- */
 
   .tool-palette {
@@ -1697,6 +1707,45 @@ function toggleDiamond(secIdx, barIdx) {
   renderChartView(currentData);
 }
 
+function toggleSplitBar(secIdx, barIdx, collapseToHalf) {
+  const bar = currentData.sections[secIdx].bars[barIdx];
+  if (typeof bar === 'string') {
+    // starts as the same chord on both sides -- edit the second half by hand
+    currentData.sections[secIdx].bars[barIdx] = { split: [bar, bar] };
+  } else if (bar && bar.split) {
+    const keepIdx = collapseToHalf != null ? collapseToHalf : 0;
+    currentData.sections[secIdx].bars[barIdx] = bar.split[keepIdx];
+  } else {
+    showToast('Split only applies to a whole bar, not part of a group.');
+    return;
+  }
+  renderChartView(currentData);
+}
+
+function getTieKey(secIdx, barIdx) {
+  return `${secIdx}-${barIdx}`;
+}
+
+function hasTie(secIdx, barIdx) {
+  return !!(currentData.ties && currentData.ties[getTieKey(secIdx, barIdx)]);
+}
+
+function toggleTie(secIdx, barIdx) {
+  const section = currentData.sections[secIdx];
+  if (barIdx >= section.bars.length - 1) {
+    showToast("Can't tie the last bar in a section to anything.");
+    return;
+  }
+  if (!currentData.ties) currentData.ties = {};
+  const key = getTieKey(secIdx, barIdx);
+  if (currentData.ties[key]) {
+    delete currentData.ties[key];
+  } else {
+    currentData.ties[key] = true;
+  }
+  renderChartView(currentData);
+}
+
 function splitSectionAtBar(secIdx, barIdx) {
   const section = currentData.sections[secIdx];
   if (barIdx <= 0 || barIdx >= section.bars.length) return; // nothing meaningful to split
@@ -1816,10 +1865,14 @@ function renderSection(section, secIdx) {
     const splitBtnHtml = editMode
       ? `<button class="bar-split-btn" data-split-sec="${secIdx}" data-split-bar="${i}" title="Split section here">⏎</button>`
       : '';
+    const tieHtml = hasTie(secIdx, i)
+      ? `<svg class="bar-tie" viewBox="0 0 30 12"><path d="M2,10 Q15,-3 28,10" fill="none" stroke="var(--ink)" stroke-width="1.4"/></svg>`
+      : '';
     barsHtml += `
       <span class="bar-wrap" style="justify-self:${justify}">
         ${renderBar(bar, ['bar', secIdx, i])}
         ${splitBtnHtml}
+        ${tieHtml}
       </span>`;
     if (i % 8 === 3 && i + 1 < section.bars.length) {
       barsHtml += `<span class="group-dot"></span>`;
@@ -1873,9 +1926,11 @@ function renderChartView(data) {
       ${editMode ? `
         <div class="tool-palette no-print">
           <button class="tool-btn${activeMarkTool === 'diamond' ? ' active' : ''}" data-tool="diamond" title="Sustain">◇</button>
+          <button class="tool-btn${activeMarkTool === 'splitbar' ? ' active' : ''}" data-tool="splitbar" title="Split bar">⁄</button>
           <button class="tool-btn${activeMarkTool === 'push' ? ' active' : ''}" data-tool="push" title="Push (early hit)">&lt;</button>
           <button class="tool-btn${activeMarkTool === 'stop' ? ' active' : ''}" data-tool="stop" title="Stop">△</button>
           <button class="tool-btn${activeMarkTool === 'dot' ? ' active' : ''}" data-tool="dot" title="Single hit">•</button>
+          <button class="tool-btn${activeMarkTool === 'tie' ? ' active' : ''}" data-tool="tie" title="Tie">⌢</button>
         </div>
       ` : ''}
       <div class="sheet${activeMarkTool ? ' tool-active' : ''}" id="sheet"></div>
@@ -1978,6 +2033,27 @@ function renderChartView(data) {
         toggleDiamond(path[1], path[2]);
       } else {
         showToast('Sustain only applies to a whole bar, not part of a split or group.');
+      }
+    } else if (activeMarkTool === 'splitbar') {
+      // Same pattern as diamond: a plain bar is length 3; once split, its
+      // two halves live at paths ending in ['split', 0] and ['split', 1].
+      const isPlainBar = path.length === 3 && path[0] === 'bar';
+      const isSplitTop = path.length === 5 && path[0] === 'bar' && path[3] === 'split' && path[4] === 0;
+      const isSplitBottom = path.length === 5 && path[0] === 'bar' && path[3] === 'split' && path[4] === 1;
+      if (isPlainBar) {
+        toggleSplitBar(path[1], path[2]);
+      } else if (isSplitTop) {
+        toggleSplitBar(path[1], path[2], 0);
+      } else if (isSplitBottom) {
+        toggleSplitBar(path[1], path[2], 1);
+      } else {
+        showToast('Split only applies to a whole bar, not part of a group.');
+      }
+    } else if (activeMarkTool === 'tie') {
+      if (path.length >= 3 && path[0] === 'bar') {
+        toggleTie(path[1], path[2]);
+      } else {
+        showToast('Tie applies to a whole bar.');
       }
     } else {
       toggleMark(path, activeMarkTool);
