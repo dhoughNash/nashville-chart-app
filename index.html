@@ -664,10 +664,10 @@
   .bar-split .split-bottom { bottom: -1px; right: 0; }
 
   /* wider variant for chord-name display (e.g. "A#" needs more room than "1") */
-  .bar-split.wide { width: 26px; height: 26px; }
-  .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 12px; }
-  .bar-split.wide .split-top { top: -2px; left: 0; }
-  .bar-split.wide .split-bottom { bottom: -2px; right: 0; }
+  .bar-split.wide { width: 34px; height: 34px; }
+  .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 13px; }
+  .bar-split.wide .split-top { top: -3px; left: -1px; }
+  .bar-split.wide .split-bottom { bottom: -3px; right: -1px; }
 
   .bar-group {
     position: relative;
@@ -1917,8 +1917,8 @@ function renderBar(bar, path) {
   }
   if (bar.split) {
     const wide = displayMode === 'chords';
-    const boxSize = wide ? 26 : 20;
-    const lineMargin = wide ? 3 : 2;
+    const boxSize = wide ? 34 : 20;
+    const lineMargin = wide ? 4 : 2;
     const lineFar = boxSize - lineMargin;
     return `
       <span class="bar-split${wide ? ' wide' : ''}">
