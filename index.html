@@ -1018,6 +1018,7 @@ async function processAudioWithMusicAi(apiKey, chordsWorkflowSlug, sectionsWorkf
   };
 }
 let displayMode = 'numbers'; // 'numbers' | 'chords' -- purely a display transform, never mutates currentData
+let editMode = false; // locked by default when a chart opens -- click "Edit" to unlock editing/structural controls
 
 const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
@@ -1354,6 +1355,7 @@ async function renderLibraryView() {
       const data = await loadChartFromLibrary(id);
       if (data) {
         currentChartId = id;
+        editMode = false;
         renderChartView(data);
       }
     });
@@ -1514,6 +1516,7 @@ function renderUploadView() {
       );
       processLogLine('Done. Opening chart...');
       currentChartId = null;
+      editMode = false;
       renderChartView(chartData);
     } catch (err) {
       if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
@@ -1601,7 +1604,7 @@ function wavyHeaderSVG() {
 }
 
 function renderBar(bar, path) {
-  const locked = displayMode === 'chords';
+  const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
     return `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
   }
@@ -1643,26 +1646,32 @@ function renderSection(section, secIdx) {
   section.bars.forEach((bar, i) => {
     const posInLine = i % 8;
     const justify = posInLine < 4 ? 'start' : 'end';
+    const splitBtnHtml = editMode
+      ? `<button class="bar-split-btn" data-split-sec="${secIdx}" data-split-bar="${i}" title="Split section here">⏎</button>`
+      : '';
     barsHtml += `
       <span class="bar-wrap" style="justify-self:${justify}">
         ${renderBar(bar, ['bar', secIdx, i])}
-        <button class="bar-split-btn" data-split-sec="${secIdx}" data-split-bar="${i}" title="Split section here">⏎</button>
+        ${splitBtnHtml}
       </span>`;
     if (i % 8 === 3 && i + 1 < section.bars.length) {
       barsHtml += `<span class="group-dot"></span>`;
     }
   });
-  const mergeBtnHtml = secIdx > 0
+  const mergeBtnHtml = editMode && secIdx > 0
     ? `<button class="section-ctrl-btn" data-merge-sec="${secIdx}" title="Merge into the previous section">⌃ Merge up</button>`
+    : '';
+  const addBarBtnHtml = editMode
+    ? `<button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a bar to this section">+ Bar</button>`
+    : '';
+  const controlsHtml = editMode
+    ? `<div class="section-controls">${addBarBtnHtml}${mergeBtnHtml}</div>`
     : '';
   return `
     <div class="section-row">
       <div class="section-label-col">
-        <div class="section-label" ${editable(['label', secIdx], section.label)}</div>
-        <div class="section-controls">
-          <button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a bar to this section">+ Bar</button>
-          ${mergeBtnHtml}
-        </div>
+        <div class="section-label" ${editable(['label', secIdx], section.label, !editMode)}</div>
+        ${controlsHtml}
       </div>
       <div class="section-bars">${barsHtml}</div>
     </div>`;
@@ -1673,9 +1682,14 @@ function renderChartView(data) {
   tabLibrary.classList.remove('active');
   tabNew.classList.remove('active');
 
-  const hintText = displayMode === 'chords'
-    ? 'Showing chord names. Switch to Numbers to edit chords directly.'
-    : 'Click any chord or label to edit it directly.';
+  let hintText;
+  if (!editMode) {
+    hintText = 'Viewing (locked). Click "Edit" to make changes.';
+  } else if (displayMode === 'chords') {
+    hintText = 'Showing chord names. Switch to Numbers to edit chords directly.';
+  } else {
+    hintText = 'Click any chord or label to edit it directly.';
+  }
 
   viewContainer.innerHTML = `
     <div class="view no-print-parent">
@@ -1685,6 +1699,7 @@ function renderChartView(data) {
           <button class="shell-btn secondary" id="modeToggleBtn">${displayMode === 'numbers' ? 'Show Chords' : 'Show Numbers'}</button>
           <button class="shell-btn secondary" id="printBtn">Print / Save PDF</button>
           <button class="shell-btn secondary" id="backBtn">← Library</button>
+          <button class="shell-btn${editMode ? '' : ' secondary'}" id="editToggleBtn">${editMode ? 'Done Editing' : 'Edit'}</button>
           <button class="shell-btn" id="saveBtn">Save to Library</button>
         </div>
       </div>
@@ -1702,28 +1717,30 @@ function renderChartView(data) {
     displayMode = displayMode === 'numbers' ? 'chords' : 'numbers';
     renderChartView(currentData);
   });
+  document.getElementById('editToggleBtn').addEventListener('click', () => {
+    editMode = !editMode;
+    renderChartView(currentData);
+  });
 
   const sheet = document.getElementById('sheet');
   const sectionsHtml = (data.sections || []).map((s, i) => renderSection(s, i)).join('');
   const selectedKey = normalizeKey(data.key);
   sheet.innerHTML = `
     <div class="sheet-header">
-      <div class="title-text" ${editable(['meta', 'title'], data.title || 'TITLE')}</div>
+      <div class="title-text" ${editable(['meta', 'title'], data.title || 'TITLE', !editMode)}</div>
       ${wavyHeaderSVG()}
       <div class="key-tempo-block">
         <div class="kt-chip">
           <span class="kt-label">Key</span>
-          <select class="kt-select" id="keySelect">
+          <select class="kt-select" id="keySelect" ${editMode ? '' : 'disabled'}>
             ${CHROMATIC.map(k => `<option value="${k}" ${k === selectedKey ? 'selected' : ''}>${k}</option>`).join('')}
           </select>
         </div>
-        <div class="kt-chip"><span class="kt-label">Tempo</span><span class="kt-value" ${editable(['meta', 'tempo'], data.tempo || '—')}</span></div>
+        <div class="kt-chip"><span class="kt-label">Tempo</span><span class="kt-value" ${editable(['meta', 'tempo'], data.tempo || '—', !editMode)}</span></div>
       </div>
     </div>
     ${sectionsHtml || '<div class="empty-state">No sections in this chart yet.</div>'}
-    <div class="add-section-row">
-      <button class="add-section-btn" id="addSectionBtn">+ Add Section</button>
-    </div>
+    ${editMode ? '<div class="add-section-row"><button class="add-section-btn" id="addSectionBtn">+ Add Section</button></div>' : ''}
   `;
 
   document.getElementById('keySelect').addEventListener('change', (e) => {
