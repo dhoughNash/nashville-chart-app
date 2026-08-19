@@ -1707,16 +1707,19 @@ function toggleDiamond(secIdx, barIdx) {
   renderChartView(currentData);
 }
 
-function toggleSplitBar(secIdx, barIdx, collapseToHalf) {
+function toggleSplitBar(secIdx, barIdx) {
+  // Deliberately {group: [a,b]} (underlined, two sequential chords sharing
+  // one bar) -- NOT {split: [a,b]} (the diagonal slash-chord notation for a
+  // chord with an altered bass note). Same distinction we established for
+  // the automated pipeline; this tool must match it.
   const bar = currentData.sections[secIdx].bars[barIdx];
   if (typeof bar === 'string') {
     // starts as the same chord on both sides -- edit the second half by hand
-    currentData.sections[secIdx].bars[barIdx] = { split: [bar, bar] };
-  } else if (bar && bar.split) {
-    const keepIdx = collapseToHalf != null ? collapseToHalf : 0;
-    currentData.sections[secIdx].bars[barIdx] = bar.split[keepIdx];
+    currentData.sections[secIdx].bars[barIdx] = { group: [bar, bar] };
+  } else if (bar && bar.group) {
+    currentData.sections[secIdx].bars[barIdx] = bar.group[0];
   } else {
-    showToast('Split only applies to a whole bar, not part of a group.');
+    showToast('Split only applies to a plain bar, not a sustain or slash chord.');
     return;
   }
   renderChartView(currentData);
@@ -1817,17 +1820,13 @@ function wavyHeaderSVG() {
 function renderBar(bar, path) {
   const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
-    const inner = `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
-    return wrapWithMarks(path, inner);
+    return `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
   }
   if (bar.split) {
     const wide = displayMode === 'chords';
     const boxSize = wide ? 26 : 20;
     const lineMargin = wide ? 3 : 2;
     const lineFar = boxSize - lineMargin;
-    // Note: marks aren't supported on individual split-bar halves -- the
-    // box is already very tight (20-26px) and overlay marks would just
-    // look cramped/broken there. Marks apply to whole plain bars only.
     return `
       <span class="bar-split${wide ? ' wide' : ''}">
         <svg viewBox="0 0 ${boxSize} ${boxSize}"><line x1="${lineMargin}" y1="${lineFar}" x2="${lineFar}" y2="${lineMargin}" stroke="var(--ink)" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -1836,12 +1835,11 @@ function renderBar(bar, path) {
       </span>`;
   }
   if (bar.diamond) {
-    const inner = `
+    return `
       <span class="bar-diamond">
         <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
         <span ${editable([...path, 'diamond'], displayValueFor(bar.diamond), locked)}</span>
       </span>`;
-    return wrapWithMarks([...path, 'diamond'], inner);
   }
   if (bar.group) {
     const wide = displayMode === 'chords';
@@ -1868,9 +1866,11 @@ function renderSection(section, secIdx) {
     const tieHtml = hasTie(secIdx, i)
       ? `<svg class="bar-tie" viewBox="0 0 30 12"><path d="M2,10 Q15,-3 28,10" fill="none" stroke="var(--ink)" stroke-width="1.4"/></svg>`
       : '';
+    const barPath = ['bar', secIdx, i];
+    const rawBarHtml = wrapWithMarks(barPath, renderBar(bar, barPath));
     barsHtml += `
-      <span class="bar-wrap" style="justify-self:${justify}">
-        ${renderBar(bar, ['bar', secIdx, i])}
+      <span class="bar-wrap" style="justify-self:${justify}" data-bar-path='${JSON.stringify(barPath)}'>
+        ${rawBarHtml}
         ${splitBtnHtml}
         ${tieHtml}
       </span>`;
@@ -1926,7 +1926,7 @@ function renderChartView(data) {
       ${editMode ? `
         <div class="tool-palette no-print">
           <button class="tool-btn${activeMarkTool === 'diamond' ? ' active' : ''}" data-tool="diamond" title="Sustain">◇</button>
-          <button class="tool-btn${activeMarkTool === 'splitbar' ? ' active' : ''}" data-tool="splitbar" title="Split bar">⁄</button>
+          <button class="tool-btn${activeMarkTool === 'splitbar' ? ' active' : ''}" data-tool="splitbar" title="Split bar (underlined)">_</button>
           <button class="tool-btn${activeMarkTool === 'push' ? ' active' : ''}" data-tool="push" title="Push (early hit)">&lt;</button>
           <button class="tool-btn${activeMarkTool === 'stop' ? ' active' : ''}" data-tool="stop" title="Stop">△</button>
           <button class="tool-btn${activeMarkTool === 'dot' ? ' active' : ''}" data-tool="dot" title="Single hit">•</button>
@@ -2017,44 +2017,21 @@ function renderChartView(data) {
 
   sheet.addEventListener('mousedown', (e) => {
     if (!activeMarkTool) return; // no tool selected -- let normal editing happen
-    const target = e.target.closest('[data-path]');
-    if (!target) return;
+    const wrap = e.target.closest('.bar-wrap');
+    if (!wrap) return;
     e.preventDefault(); // block the contenteditable focus/cursor from opening
-    const path = JSON.parse(target.getAttribute('data-path'));
+    // Every tool now resolves to the SAME whole-bar path regardless of where
+    // exactly within the bar you click (the numeral, a diamond's outline, a
+    // triangle's outline, blank space) -- so tools reliably combine instead
+    // of only registering when you click the exact pixel of the number.
+    const path = JSON.parse(wrap.getAttribute('data-bar-path'));
+    const [, secIdx, barIdx] = path;
     if (activeMarkTool === 'diamond') {
-      // A plain bar's path is ['bar', secIdx, barIdx] (length 3). Once it's
-      // already a diamond, its numeral's own path gains a trailing
-      // 'diamond' segment (length 4) -- recognize both shapes so clicking
-      // an existing diamond again correctly toggles it back off instead of
-      // silently failing to match.
-      const isPlainBar = path.length === 3 && path[0] === 'bar';
-      const isExistingDiamond = path.length === 4 && path[0] === 'bar' && path[3] === 'diamond';
-      if (isPlainBar || isExistingDiamond) {
-        toggleDiamond(path[1], path[2]);
-      } else {
-        showToast('Sustain only applies to a whole bar, not part of a split or group.');
-      }
+      toggleDiamond(secIdx, barIdx);
     } else if (activeMarkTool === 'splitbar') {
-      // Same pattern as diamond: a plain bar is length 3; once split, its
-      // two halves live at paths ending in ['split', 0] and ['split', 1].
-      const isPlainBar = path.length === 3 && path[0] === 'bar';
-      const isSplitTop = path.length === 5 && path[0] === 'bar' && path[3] === 'split' && path[4] === 0;
-      const isSplitBottom = path.length === 5 && path[0] === 'bar' && path[3] === 'split' && path[4] === 1;
-      if (isPlainBar) {
-        toggleSplitBar(path[1], path[2]);
-      } else if (isSplitTop) {
-        toggleSplitBar(path[1], path[2], 0);
-      } else if (isSplitBottom) {
-        toggleSplitBar(path[1], path[2], 1);
-      } else {
-        showToast('Split only applies to a whole bar, not part of a group.');
-      }
+      toggleSplitBar(secIdx, barIdx);
     } else if (activeMarkTool === 'tie') {
-      if (path.length >= 3 && path[0] === 'bar') {
-        toggleTie(path[1], path[2]);
-      } else {
-        showToast('Tie applies to a whole bar.');
-      }
+      toggleTie(secIdx, barIdx);
     } else {
       toggleMark(path, activeMarkTool);
     }
