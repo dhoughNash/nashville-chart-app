@@ -468,7 +468,7 @@
 
   .title-text {
     font-family: 'Architects Daughter', cursive;
-    font-size: 26px;
+    font-size: 29px;
     color: var(--ink);
     -webkit-text-stroke: 0.9px var(--ink);
     position: absolute;
@@ -510,14 +510,14 @@
 
   .kt-chip .kt-value {
     font-family: 'Architects Daughter', cursive;
-    font-size: 15px;
+    font-size: 17px;
     color: var(--ink);
     -webkit-text-stroke: 0.75px var(--ink);
   }
 
   .kt-select {
     font-family: 'Architects Daughter', cursive;
-    font-size: 15px;
+    font-size: 17px;
     color: var(--ink);
     -webkit-text-stroke: 0.75px var(--ink);
     background: transparent;
@@ -548,7 +548,7 @@
 
   .section-label {
     font-family: 'Architects Daughter', cursive;
-    font-size: 16px;
+    font-size: 18px;
     color: var(--ink);
     -webkit-text-stroke: 0.75px var(--ink);
   }
@@ -643,7 +643,7 @@
 
   .bar-single {
     font-family: 'Architects Daughter', cursive;
-    font-size: 24px;
+    font-size: 27px;
     color: var(--ink);
     -webkit-text-stroke: 0.9px var(--ink);
     line-height: 1;
@@ -833,7 +833,7 @@
   /* --- print / save-as-PDF --- */
   @media print {
     @page {
-      margin: 0.5in;
+      margin: 1in;
     }
 
     /* strip the dark binder shell entirely -- only the chart page prints */
@@ -1579,7 +1579,7 @@ function renderUploadView() {
             </svg>
             <div class="pen-emoji">✎</div>
           </div>
-          <div class="processing-text">Processing your chart&hellip;</div>
+          <div class="processing-text">Processing your chart&hellip; this'll just take a sec</div>
         </div>
 
         <div class="process-log" id="processLog" style="display:none"></div>
@@ -2163,7 +2163,7 @@ function renderChartView(data) {
 // engine, which is what the print pagination logic actually reads --
 // transform only changes the visual appearance after layout, so it
 // wouldn't affect how many pages the browser decides to print.
-const PRINT_PAGE_HEIGHT_BUDGET_PX = 900; // conservative estimate for one page at 0.5in margins
+const PRINT_PAGE_HEIGHT_BUDGET_PX = 820; // conservative estimate for one page at 1in margins
 const PRINT_MIN_ZOOM = 0.45; // floor so extremely long charts don't shrink to unreadable
 
 window.addEventListener('beforeprint', () => {
