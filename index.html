@@ -1909,10 +1909,17 @@ function wavyHeaderSVG() {
     </svg>`;
 }
 
-function renderBar(bar, path) {
+function renderBar(bar, path, inGroup) {
   const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
-    const inner = `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
+    // A chord inside a group has to share space with a sibling chord, so
+    // in chord-name mode (where names like "Am" are much wider than a
+    // plain Nashville digit) it needs to render noticeably smaller than a
+    // normal standalone bar -- same reasoning as why the diamond and split
+    // box already use their own smaller font.
+    const shrink = inGroup && displayMode === 'chords';
+    const styleAttr = shrink ? ' style="font-size:19px"' : '';
+    const inner = `<span class="bar-single"${styleAttr} ${editable(path, displayValueFor(bar), locked)}</span>`;
     return wrapWithMarks(path, inner);
   }
   if (bar.split) {
@@ -1943,7 +1950,7 @@ function renderBar(bar, path) {
     const wide = displayMode === 'chords';
     const containsSplit = bar.group.some(item => item && typeof item === 'object' && item.split);
     const gapPx = wide ? (containsSplit ? 5 : 9) : 14;
-    const innerHtml = bar.group.map((item, i) => renderBar(item, [...path, 'group', i])).join('');
+    const innerHtml = bar.group.map((item, i) => renderBar(item, [...path, 'group', i], true)).join('');
     return `
       <span class="bar-group" style="gap:${gapPx}px">
         ${innerHtml}
