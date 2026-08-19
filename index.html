@@ -487,14 +487,85 @@
     border-top: 1px solid rgba(35, 40, 56, 0.18);
   }
 
+  .section-label-col {
+    width: 76px;
+    flex-shrink: 0;
+  }
+
   .section-label {
     font-family: 'Architects Daughter', cursive;
     font-size: 16px;
     color: var(--ink);
     -webkit-text-stroke: 0.75px var(--ink);
-    width: 76px;
-    flex-shrink: 0;
   }
+
+  .section-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .section-row:hover .section-controls { opacity: 1; }
+
+  .section-ctrl-btn {
+    background: transparent;
+    border: 1px solid var(--ink-soft);
+    color: var(--ink-soft);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .section-ctrl-btn:hover { border-color: var(--red); color: var(--red); }
+
+  .bar-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .bar-split-btn {
+    position: absolute;
+    top: -16px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1px solid var(--ink-soft);
+    color: var(--ink-soft);
+    font-size: 9px;
+    line-height: 14px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 5;
+  }
+  .bar-wrap:hover .bar-split-btn { opacity: 1; }
+  .bar-split-btn:hover { border-color: var(--red); color: var(--red); }
+
+  .add-section-row {
+    text-align: center;
+    padding-top: 24px;
+  }
+
+  .add-section-btn {
+    background: transparent;
+    border: 1px dashed var(--ink-soft);
+    color: var(--ink-soft);
+    font-family: 'Public Sans', sans-serif;
+    font-size: 11px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .add-section-btn:hover { border-color: var(--brass); color: var(--ink); }
 
   .section-bars {
     display: grid;
@@ -591,7 +662,7 @@
   @media (max-width: 560px) {
     .sheet { padding: 28px 20px 36px; }
     .section-row { flex-direction: column; align-items: flex-start; gap: 8px; }
-    .section-label { width: auto; }
+    .section-label-col { width: auto; }
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
   }
 
@@ -607,7 +678,7 @@
       background-image: none;
     }
 
-    .topnav, .save-toast, .no-print {
+    .topnav, .save-toast, .no-print, .add-section-row, .bar-split-btn, .section-controls {
       display: none !important;
     }
 
@@ -1459,6 +1530,39 @@ function renderUploadView() {
 
 // ---------- chart view (rendering + editing) ----------
 
+// ---------- structural editing: split/merge sections, add bars/sections ----------
+
+function splitSectionAtBar(secIdx, barIdx) {
+  const section = currentData.sections[secIdx];
+  if (barIdx <= 0 || barIdx >= section.bars.length) return; // nothing meaningful to split
+  const firstPart = section.bars.slice(0, barIdx);
+  const secondPart = section.bars.slice(barIdx);
+  currentData.sections.splice(secIdx, 1,
+    { label: section.label, bars: firstPart },
+    { label: 'New', bars: secondPart }
+  );
+  renderChartView(currentData);
+}
+
+function mergeSectionUp(secIdx) {
+  if (secIdx <= 0) return;
+  const prev = currentData.sections[secIdx - 1];
+  const current = currentData.sections[secIdx];
+  prev.bars = prev.bars.concat(current.bars);
+  currentData.sections.splice(secIdx, 1);
+  renderChartView(currentData);
+}
+
+function addBarToSection(secIdx) {
+  currentData.sections[secIdx].bars.push('1');
+  renderChartView(currentData);
+}
+
+function addNewSection() {
+  currentData.sections.push({ label: 'New', bars: ['1'] });
+  renderChartView(currentData);
+}
+
 function setAtPath(data, path, value) {
   if (path[0] === 'meta') { data[path[1]] = value; return; }
   if (path[0] === 'label') { data.sections[path[1]].label = value; return; }
@@ -1539,14 +1643,27 @@ function renderSection(section, secIdx) {
   section.bars.forEach((bar, i) => {
     const posInLine = i % 8;
     const justify = posInLine < 4 ? 'start' : 'end';
-    barsHtml += `<span style="justify-self:${justify}">${renderBar(bar, ['bar', secIdx, i])}</span>`;
+    barsHtml += `
+      <span class="bar-wrap" style="justify-self:${justify}">
+        ${renderBar(bar, ['bar', secIdx, i])}
+        <button class="bar-split-btn" data-split-sec="${secIdx}" data-split-bar="${i}" title="Split section here">⏎</button>
+      </span>`;
     if (i % 8 === 3 && i + 1 < section.bars.length) {
       barsHtml += `<span class="group-dot"></span>`;
     }
   });
+  const mergeBtnHtml = secIdx > 0
+    ? `<button class="section-ctrl-btn" data-merge-sec="${secIdx}" title="Merge into the previous section">⌃ Merge up</button>`
+    : '';
   return `
     <div class="section-row">
-      <div class="section-label" ${editable(['label', secIdx], section.label)}</div>
+      <div class="section-label-col">
+        <div class="section-label" ${editable(['label', secIdx], section.label)}</div>
+        <div class="section-controls">
+          <button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a bar to this section">+ Bar</button>
+          ${mergeBtnHtml}
+        </div>
+      </div>
       <div class="section-bars">${barsHtml}</div>
     </div>`;
 }
@@ -1604,11 +1721,36 @@ function renderChartView(data) {
       </div>
     </div>
     ${sectionsHtml || '<div class="empty-state">No sections in this chart yet.</div>'}
+    <div class="add-section-row">
+      <button class="add-section-btn" id="addSectionBtn">+ Add Section</button>
+    </div>
   `;
 
   document.getElementById('keySelect').addEventListener('change', (e) => {
     currentData.key = e.target.value;
     renderChartView(currentData);
+  });
+
+  sheet.addEventListener('click', (e) => {
+    const splitBtn = e.target.closest('[data-split-sec]');
+    if (splitBtn) {
+      splitSectionAtBar(parseInt(splitBtn.dataset.splitSec, 10), parseInt(splitBtn.dataset.splitBar, 10));
+      return;
+    }
+    const mergeBtn = e.target.closest('[data-merge-sec]');
+    if (mergeBtn) {
+      mergeSectionUp(parseInt(mergeBtn.dataset.mergeSec, 10));
+      return;
+    }
+    const addBarBtn = e.target.closest('[data-addbar-sec]');
+    if (addBarBtn) {
+      addBarToSection(parseInt(addBarBtn.dataset.addbarSec, 10));
+      return;
+    }
+    if (e.target.closest('#addSectionBtn')) {
+      addNewSection();
+      return;
+    }
   });
 
   sheet.addEventListener('focusout', (e) => {
