@@ -1694,32 +1694,56 @@ function wrapWithMarks(path, innerHtml) {
   return `<span class="marked-chord">${decorHtml}${innerHtml}</span>`;
 }
 
-function toggleDiamond(secIdx, barIdx) {
-  const bar = currentData.sections[secIdx].bars[barIdx];
-  if (typeof bar === 'string') {
-    currentData.sections[secIdx].bars[barIdx] = { diamond: bar };
-  } else if (bar && bar.diamond) {
-    currentData.sections[secIdx].bars[barIdx] = bar.diamond;
+function getValueAtBarPath(path) {
+  // path like ['bar', secIdx, barIdx] (whole bar) or
+  // ['bar', secIdx, barIdx, 'group', subIdx] (one chord inside a group)
+  let node = currentData.sections[path[1]].bars[path[2]];
+  const rest = path.slice(3);
+  for (let i = 0; i < rest.length; i += 2) {
+    node = node[rest[i]][rest[i + 1]];
+  }
+  return node;
+}
+
+function setValueAtBarPath(path, value) {
+  const rest = path.slice(3);
+  if (rest.length === 0) {
+    currentData.sections[path[1]].bars[path[2]] = value;
+    return;
+  }
+  let node = currentData.sections[path[1]].bars[path[2]];
+  for (let i = 0; i < rest.length - 2; i += 2) {
+    node = node[rest[i]][rest[i + 1]];
+  }
+  node[rest[rest.length - 2]][rest[rest.length - 1]] = value;
+}
+
+function toggleDiamond(path) {
+  const val = getValueAtBarPath(path);
+  if (typeof val === 'string') {
+    setValueAtBarPath(path, { diamond: val });
+  } else if (val && val.diamond) {
+    setValueAtBarPath(path, val.diamond);
   } else {
-    showToast('Sustain only applies to a whole bar, not part of a split or group.');
+    showToast('Sustain only applies to a single chord, not a split or a whole group.');
     return;
   }
   renderChartView(currentData);
 }
 
-function toggleSplitBar(secIdx, barIdx) {
+function toggleSplitBar(path) {
   // Deliberately {group: [a,b]} (underlined, two sequential chords sharing
   // one bar) -- NOT {split: [a,b]} (the diagonal slash-chord notation for a
   // chord with an altered bass note). Same distinction we established for
   // the automated pipeline; this tool must match it.
-  const bar = currentData.sections[secIdx].bars[barIdx];
-  if (typeof bar === 'string') {
+  const val = getValueAtBarPath(path);
+  if (typeof val === 'string') {
     // starts as the same chord on both sides -- edit the second half by hand
-    currentData.sections[secIdx].bars[barIdx] = { group: [bar, bar] };
-  } else if (bar && bar.group) {
-    currentData.sections[secIdx].bars[barIdx] = bar.group[0];
+    setValueAtBarPath(path, { group: [val, val] });
+  } else if (val && val.group) {
+    setValueAtBarPath(path, val.group[0]);
   } else {
-    showToast('Split only applies to a plain bar, not a sustain or slash chord.');
+    showToast('Split only applies to a single chord, not a sustain or slash chord.');
     return;
   }
   renderChartView(currentData);
@@ -1820,7 +1844,8 @@ function wavyHeaderSVG() {
 function renderBar(bar, path) {
   const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
-    return `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
+    const inner = `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
+    return wrapWithMarks(path, inner);
   }
   if (bar.split) {
     const wide = displayMode === 'chords';
@@ -1835,11 +1860,12 @@ function renderBar(bar, path) {
       </span>`;
   }
   if (bar.diamond) {
-    return `
+    const inner = `
       <span class="bar-diamond">
         <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
         <span ${editable([...path, 'diamond'], displayValueFor(bar.diamond), locked)}</span>
       </span>`;
+    return wrapWithMarks([...path, 'diamond'], inner);
   }
   if (bar.group) {
     const wide = displayMode === 'chords';
@@ -2020,18 +2046,27 @@ function renderChartView(data) {
     const wrap = e.target.closest('.bar-wrap');
     if (!wrap) return;
     e.preventDefault(); // block the contenteditable focus/cursor from opening
-    // Every tool now resolves to the SAME whole-bar path regardless of where
-    // exactly within the bar you click (the numeral, a diamond's outline, a
-    // triangle's outline, blank space) -- so tools reliably combine instead
-    // of only registering when you click the exact pixel of the number.
-    const path = JSON.parse(wrap.getAttribute('data-bar-path'));
-    const [, secIdx, barIdx] = path;
+    const basePath = JSON.parse(wrap.getAttribute('data-bar-path'));
+
+    if (activeMarkTool === 'tie') {
+      // Ties always connect whole bars to the next whole bar, never
+      // individual chords within a group -- always use the base path.
+      toggleTie(basePath[1], basePath[2]);
+      return;
+    }
+
+    // For everything else, prefer the most specific chord you actually
+    // clicked (e.g. one half of a split-bar group), so marks land exactly
+    // where you clicked instead of centering between two chords. Falls
+    // back to the whole bar only when the click didn't land on a specific
+    // numeral (its outline, the underline, blank space).
+    const specific = e.target.closest('[data-path]');
+    const path = specific ? JSON.parse(specific.getAttribute('data-path')) : basePath;
+
     if (activeMarkTool === 'diamond') {
-      toggleDiamond(secIdx, barIdx);
+      toggleDiamond(path);
     } else if (activeMarkTool === 'splitbar') {
-      toggleSplitBar(secIdx, barIdx);
-    } else if (activeMarkTool === 'tie') {
-      toggleTie(secIdx, barIdx);
+      toggleSplitBar(path);
     } else {
       toggleMark(path, activeMarkTool);
     }
