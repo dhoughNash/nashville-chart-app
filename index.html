@@ -692,9 +692,6 @@ function chordToNashvilleNumeral(chordName, keyTonic, keyMode) {
     numeral = degreeMap[interval];
     accidental = "";
   } else {
-    // Nearest diatonic degree AT OR ABOVE interval, flattened down to reach
-    // it -- e.g. bVII in a major key is one semitone below the natural 7th,
-    // so we flatten the 7th, not the 6th.
     const steps = keyMode === "major" ? MUSICAI_MAJOR_STEPS : MUSICAI_MINOR_STEPS;
     const candidates = steps.filter(s => s >= interval);
     const upper = candidates.length ? Math.min(...candidates) : steps[steps.length - 1];
@@ -747,9 +744,6 @@ function buildBarsFromMusicAiData(chordsData, keyTonic, keyMode) {
 }
 
 function musicaiBarToShorthand(barEntries) {
-  // Deliberately {group: [a,b]} (underline), NOT {split: [a,b]} (diagonal) --
-  // diagonal is reserved for slash chords (a chord with an altered bass
-  // note), a different musical concept from two sequential chords in one bar.
   if (barEntries.length === 1) return barEntries[0].numeral;
   return { group: [barEntries[0].numeral, barEntries[barEntries.length - 1].numeral] };
 }
@@ -920,16 +914,12 @@ let displayMode = 'numbers'; // 'numbers' | 'chords' -- purely a display transfo
 const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 
-// Nashville-number suffix -> conventional chord-name suffix (e.g. "-7" -> "m7").
-// Anything not in this map is passed through unchanged as a reasonable fallback.
 const NASHVILLE_SUFFIX_TO_CHORD = {
   '': '', '-': 'm', '-6': 'm6', '-7': 'm7', '-maj7': 'm(maj7)',
   'maj7': 'maj7', '6': '6', '7': '7', 'sus2': 'sus2', 'sus4': 'sus4',
   '+': '+', '°': 'dim', '°7': 'dim7', 'ø7': 'm7b5'
 };
 
-// Matches whatever's stored in data.key (e.g. "A#", "G major", "Bb") to one
-// of the 12 canonical chromatic (sharp) spellings the dropdown/converter use.
 function normalizeKey(raw) {
   if (!raw) return 'C';
   const first = raw.trim().split(/\s+/)[0];
@@ -937,17 +927,7 @@ function normalizeKey(raw) {
   return CHROMATIC.includes(normalized) ? normalized : 'C';
 }
 
-// Converts a Nashville numeral (e.g. "6-", "b7", "1sus4") into an actual chord
-// name (e.g. "Em", "F", "Gsus4") relative to keyRoot. Numbers are always
-// interpreted against the major scale, per standard Nashville Number System
-// convention -- quality (major/minor/etc.) comes from the numeral's own
-// suffix, not from the key's mode.
 function numberToChordName(numeral, keyRoot) {
-  // Handle a manually-typed slash chord (e.g. "2-/5" for "2 minor over a 5
-  // bass note") by converting each side independently and rejoining --
-  // this is a general fallback, not true bass-note detection from Music AI
-  // (which doesn't currently give us that data), but it means you can type
-  // your own bass note and have both halves convert to real note names.
   if (numeral.includes('/')) {
     const slashIdx = numeral.indexOf('/');
     const mainPart = numeral.slice(0, slashIdx);
@@ -957,7 +937,7 @@ function numberToChordName(numeral, keyRoot) {
 
   const rootIdx = CHROMATIC.indexOf(normalizeKey(keyRoot));
   const m = numeral.match(/^([b#]?)([1-7])(.*)$/);
-  if (!m) return numeral; // can't parse (shouldn't normally happen) -- show as-is
+  if (!m) return numeral;
   const [, accidental, digit, suffix] = m;
   const majorSteps = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11 };
   let semitone = majorSteps[digit];
@@ -988,14 +968,11 @@ const DEMO = {
 };
 
 // ---------- Google Drive sign-in ----------
-// Uses the Drive "appDataFolder" -- a hidden folder scoped to just this app,
-// so charts never clutter the person's regular visible Drive. Falls back to
-// localStorage automatically when not signed in.
 
 const GOOGLE_CLIENT_ID = '451996104682-kj3dmo065dt1e4jh8to95j3etj473g6q.apps.googleusercontent.com';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 
-let driveAccessToken = null; // session-only, in-memory -- never persisted
+let driveAccessToken = null;
 let driveSignedIn = false;
 let googleTokenClient = null;
 
@@ -1008,9 +985,6 @@ function initGoogleAuth() {
     scope: DRIVE_SCOPE,
     callback: (tokenResponse) => {
       if (tokenResponse.error) {
-        // A silent attempt failing is completely normal (first-time visitor,
-        // no prior consent, or session expired) -- stay quiet about it.
-        // Only surface an error when the person explicitly clicked the button.
         if (!isSilentSignInAttempt) {
           showToast('Google sign-in failed: ' + tokenResponse.error);
         }
@@ -1029,16 +1003,13 @@ function initGoogleAuth() {
 
 function attemptSilentSignIn() {
   let attempts = 0;
-  const maxAttempts = 30; // ~3 seconds, waiting for the GSI script to load
+  const maxAttempts = 30;
   const tryInit = () => {
     attempts++;
     if (typeof google !== 'undefined' && google.accounts) {
       initGoogleAuth();
       if (googleTokenClient) {
         isSilentSignInAttempt = true;
-        // prompt: '' asks Google to skip the consent UI entirely if the
-        // person already granted access before and is still logged into
-        // Google in this browser -- otherwise it just fails quietly.
         googleTokenClient.requestAccessToken({ prompt: '' });
       }
       return;
@@ -1046,7 +1017,6 @@ function attemptSilentSignIn() {
     if (attempts < maxAttempts) {
       setTimeout(tryInit, 100);
     }
-    // if the library never loads, just leave the manual "Sign in" button as the fallback
   };
   tryInit();
 }
@@ -1158,15 +1128,6 @@ async function deleteChartFromDrive(id) {
 }
 
 // ---------- persistent storage helpers ----------
-// Index: "charts-index" -> array of {id, title, key, tempo, sectionCount, updatedAt}
-// Each chart's full data: "chart:<id>" -> the chart JSON
-//
-// Uses localStorage -- a standard browser feature that works on any real
-// website (unlike window.storage, which only exists inside Claude's own
-// artifact preview and would silently fail once deployed standalone).
-// Trade-off: this is per-browser/per-device, not synced across devices.
-// A future Google Drive integration can layer on top of these same function
-// signatures without touching any of the calling code elsewhere in the app.
 
 async function getChartsIndex() {
   if (driveSignedIn) {
@@ -1309,7 +1270,7 @@ function renderUploadView() {
       <div class="view-header">
         <div>
           <h1>New Chart</h1>
-          <p>Process a song directly, load a chart_data.json file, or start from a  demo.</p>
+          <p>Process a song directly and get your Nashville chart.</p>
         </div>
       </div>
 
@@ -1342,72 +1303,8 @@ function renderUploadView() {
           <a href="#" id="changeKeyLink">Change API key</a>
         </div>
       </div>
-
-      <div class="panel-divider">or</div>
-
-      <div class="upload-panel">
-        <div class="field">
-          <label for="fileInput">Load JSON file</label>
-          <input type="file" id="fileInput" accept="application/json,.json">
-        </div>
-        <textarea id="jsonInput" placeholder="...or paste chart JSON here"></textarea>
-        <div class="btn-row">
-          <button class="shell-btn" id="renderBtn">Open chart</button>
-          <button class="shell-btn secondary" id="exampleBtn">Start from demo</button>
-        </div>
-        <div id="errorMsg"></div>
-      </div>
     </div>
   `;
-
-  const jsonInput = document.getElementById('jsonInput');
-  const fileInput = document.getElementById('fileInput');
-  const renderBtn = document.getElementById('renderBtn');
-  const exampleBtn = document.getElementById('exampleBtn');
-  const errorMsg = document.getElementById('errorMsg');
-
-  function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
-  function clearError() { errorMsg.style.display = 'none'; }
-
-  renderBtn.addEventListener('click', () => {
-    clearError();
-    const raw = jsonInput.value.trim();
-    if (!raw) { showError('Paste chart JSON first, load a file, or click "Start from demo."'); return; }
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch (e) {
-      showError("That doesn't look like valid JSON. Make sure you copied the whole block, including the outer { }.");
-      return;
-    }
-    currentChartId = null;
-    renderChartView(data);
-  });
-
-  exampleBtn.addEventListener('click', () => {
-    currentChartId = null;
-    renderChartView(JSON.parse(JSON.stringify(DEMO)));
-  });
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-    clearError();
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      let data;
-      try {
-        data = JSON.parse(e.target.result);
-      } catch (err) {
-        showError(`"${file.name}" doesn't look like valid JSON.`);
-        return;
-      }
-      currentChartId = null;
-      renderChartView(data);
-    };
-    reader.onerror = () => showError(`Couldn't read "${file.name}".`);
-    reader.readAsText(file);
-  });
 
   // --- direct audio processing panel ---
   const processBtn = document.getElementById('processBtn');
@@ -1484,8 +1381,6 @@ function renderUploadView() {
       showProcessError('That doesn\'t look like an audio file.');
       return;
     }
-    // reflect the dropped file into the real file input so the same
-    // "read the file input" logic works regardless of drop vs click
     const dt = new DataTransfer();
     dt.items.add(file);
     audioFileInput.files = dt.files;
@@ -1551,7 +1446,7 @@ function setAtPath(data, path, value) {
 
 function editable(path, value, locked) {
   if (locked) {
-    return `>${value}`; // no contenteditable, no data-path -- purely display-only
+    return `>${value}`;
   }
   return `contenteditable="true" data-path='${JSON.stringify(path)}'>${value}`;
 }
@@ -1605,9 +1500,6 @@ function renderBar(bar, path) {
 function renderSection(section, secIdx) {
   let barsHtml = '';
   section.bars.forEach((bar, i) => {
-    // First 4 bars of each 8-bar line hug the left edge of their column,
-    // the last 4 hug the right edge -- so the whole line reads as two
-    // groups anchored outward from the centered dot, not floating loosely.
     const posInLine = i % 8;
     const justify = posInLine < 4 ? 'start' : 'end';
     barsHtml += `<span style="justify-self:${justify}">${renderBar(bar, ['bar', secIdx, i])}</span>`;
