@@ -550,6 +550,14 @@
   .bar-wrap:hover .bar-split-btn { opacity: 1; }
   .bar-split-btn:hover { border-color: var(--red); color: var(--red); }
 
+  /* while a mark tool is selected, hide all structural-editing controls so
+     there's nothing near the chord that could be clicked by accident */
+  .sheet.tool-active .bar-split-btn,
+  .sheet.tool-active .section-controls,
+  .sheet.tool-active .add-section-row {
+    display: none !important;
+  }
+
   .add-section-row {
     text-align: center;
     padding-top: 24px;
@@ -1896,6 +1904,10 @@ function renderChartView(data) {
         const tool = btn.dataset.tool;
         activeMarkTool = activeMarkTool === tool ? null : tool;
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === activeMarkTool));
+        // Hide split/merge/add-bar/add-section entirely while a mark tool is
+        // selected -- otherwise those buttons sit right next to the chord
+        // you're trying to click and are very easy to hit by accident.
+        document.getElementById('sheet').classList.toggle('tool-active', !!activeMarkTool);
       });
     });
   }
