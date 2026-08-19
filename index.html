@@ -1872,10 +1872,10 @@ function renderChartView(data) {
       </div>
       ${editMode ? `
         <div class="tool-palette no-print">
-          <button class="tool-btn" data-tool="diamond" title="Sustain">◇</button>
-          <button class="tool-btn" data-tool="push" title="Push (early hit)">&lt;</button>
-          <button class="tool-btn" data-tool="stop" title="Stop">△</button>
-          <button class="tool-btn" data-tool="dot" title="Single hit">•</button>
+          <button class="tool-btn${activeMarkTool === 'diamond' ? ' active' : ''}" data-tool="diamond" title="Sustain">◇</button>
+          <button class="tool-btn${activeMarkTool === 'push' ? ' active' : ''}" data-tool="push" title="Push (early hit)">&lt;</button>
+          <button class="tool-btn${activeMarkTool === 'stop' ? ' active' : ''}" data-tool="stop" title="Stop">△</button>
+          <button class="tool-btn${activeMarkTool === 'dot' ? ' active' : ''}" data-tool="dot" title="Single hit">•</button>
         </div>
       ` : ''}
       <div class="sheet${activeMarkTool ? ' tool-active' : ''}" id="sheet"></div>
