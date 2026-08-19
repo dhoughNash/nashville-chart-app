@@ -2055,6 +2055,15 @@ function renderChartView(data) {
       return;
     }
 
+    if (activeMarkTool === 'splitbar') {
+      // Splitting only makes sense at the whole-bar level -- unlike
+      // Sustain, you can't meaningfully split one half of an already-split
+      // bar (that would nest a split inside a split). Always use the base
+      // path so a second click reliably collapses back to one chord.
+      toggleSplitBar(basePath);
+      return;
+    }
+
     // For everything else, prefer the most specific chord you actually
     // clicked (e.g. one half of a split-bar group), so marks land exactly
     // where you clicked instead of centering between two chords. Falls
@@ -2065,8 +2074,6 @@ function renderChartView(data) {
 
     if (activeMarkTool === 'diamond') {
       toggleDiamond(path);
-    } else if (activeMarkTool === 'splitbar') {
-      toggleSplitBar(path);
     } else {
       toggleMark(path, activeMarkTool);
     }
