@@ -943,6 +943,8 @@ let driveAccessToken = null; // session-only, in-memory -- never persisted
 let driveSignedIn = false;
 let googleTokenClient = null;
 
+let isSilentSignInAttempt = false;
+
 function initGoogleAuth() {
   if (googleTokenClient || typeof google === 'undefined') return;
   googleTokenClient = google.accounts.oauth2.initTokenClient({
@@ -950,9 +952,16 @@ function initGoogleAuth() {
     scope: DRIVE_SCOPE,
     callback: (tokenResponse) => {
       if (tokenResponse.error) {
-        showToast('Google sign-in failed: ' + tokenResponse.error);
+        // A silent attempt failing is completely normal (first-time visitor,
+        // no prior consent, or session expired) -- stay quiet about it.
+        // Only surface an error when the person explicitly clicked the button.
+        if (!isSilentSignInAttempt) {
+          showToast('Google sign-in failed: ' + tokenResponse.error);
+        }
+        isSilentSignInAttempt = false;
         return;
       }
+      isSilentSignInAttempt = false;
       driveAccessToken = tokenResponse.access_token;
       driveSignedIn = true;
       showToast('Signed in with Google');
@@ -960,6 +969,30 @@ function initGoogleAuth() {
       if (document.getElementById('libraryContent')) renderLibraryView();
     },
   });
+}
+
+function attemptSilentSignIn() {
+  let attempts = 0;
+  const maxAttempts = 30; // ~3 seconds, waiting for the GSI script to load
+  const tryInit = () => {
+    attempts++;
+    if (typeof google !== 'undefined' && google.accounts) {
+      initGoogleAuth();
+      if (googleTokenClient) {
+        isSilentSignInAttempt = true;
+        // prompt: '' asks Google to skip the consent UI entirely if the
+        // person already granted access before and is still logged into
+        // Google in this browser -- otherwise it just fails quietly.
+        googleTokenClient.requestAccessToken({ prompt: '' });
+      }
+      return;
+    }
+    if (attempts < maxAttempts) {
+      setTimeout(tryInit, 100);
+    }
+    // if the library never loads, just leave the manual "Sign in" button as the fallback
+  };
+  tryInit();
 }
 
 function signInWithGoogle() {
@@ -1156,7 +1189,7 @@ async function renderLibraryView() {
       <div class="view-header">
         <div>
           <h1>Your Charts</h1>
-          <p>Saved on this device, in this browser.</p>
+          <p>${driveSignedIn ? 'Synced to your Google Drive.' : 'Saved on this device, in this browser.'}</p>
         </div>
         <button class="shell-btn" id="newChartBtn">+ New Chart</button>
       </div>
@@ -1541,6 +1574,7 @@ function renderChartView(data) {
 
 // ---------- boot ----------
 updateAuthUI();
+attemptSilentSignIn();
 renderLibraryView();
 </script>
 </body>
