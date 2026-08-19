@@ -1878,7 +1878,7 @@ function renderChartView(data) {
           <button class="tool-btn" data-tool="dot" title="Single hit">•</button>
         </div>
       ` : ''}
-      <div class="sheet" id="sheet"></div>
+      <div class="sheet${activeMarkTool ? ' tool-active' : ''}" id="sheet"></div>
     </div>
   `;
 
