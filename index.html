@@ -633,6 +633,99 @@
     background: var(--ink); align-self: center; justify-self: center;
   }
 
+  /* --- chord marks: sustain reuses the diamond bar-type; these three are
+     overlay decorations applied on top of an existing chord --- */
+
+  .marked-chord {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mark-push {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Architects Daughter', cursive;
+    font-size: 15px;
+    color: var(--red);
+    -webkit-text-stroke: 0.4px var(--red);
+    pointer-events: none;
+  }
+
+  .mark-dot {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--red);
+    pointer-events: none;
+  }
+
+  .mark-stop {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* --- edit-mode tool palette (Photoshop-style side panel) --- */
+
+  .tool-palette {
+    position: fixed;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 10px;
+    padding: 10px;
+    z-index: 50;
+  }
+
+  .tool-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: transparent;
+    border: 1px solid var(--shell-edge);
+    color: var(--shell-text-dim);
+    font-family: 'Architects Daughter', cursive;
+    font-size: 19px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tool-btn:hover { border-color: var(--brass); color: var(--shell-text); }
+  .tool-btn.active {
+    background: var(--brass);
+    color: var(--shell-bg);
+    border-color: var(--brass);
+  }
+
+  @media (max-width: 900px) {
+    .tool-palette {
+      left: 50%;
+      top: auto;
+      bottom: 16px;
+      transform: translateX(-50%);
+      flex-direction: row;
+    }
+  }
+
   .empty-state {
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
@@ -1356,6 +1449,7 @@ async function renderLibraryView() {
       if (data) {
         currentChartId = id;
         editMode = false;
+        activeMarkTool = null;
         renderChartView(data);
       }
     });
@@ -1517,6 +1611,7 @@ function renderUploadView() {
       processLogLine('Done. Opening chart...');
       currentChartId = null;
       editMode = false;
+      activeMarkTool = null;
       renderChartView(chartData);
     } catch (err) {
       if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
@@ -1534,6 +1629,66 @@ function renderUploadView() {
 // ---------- chart view (rendering + editing) ----------
 
 // ---------- structural editing: split/merge sections, add bars/sections ----------
+
+// ---------- chord marks (push, stop, dot) and diamond toggling ----------
+// Marks are stored separately from the chord's own value, keyed by the
+// same path system used for editing -- so applying a mark never touches
+// or risks corrupting the actual chord text.
+
+let activeMarkTool = null; // null | 'diamond' | 'push' | 'stop' | 'dot'
+
+function getMarkPathKey(path) {
+  return JSON.stringify(path);
+}
+
+function getMarksForPath(path) {
+  if (!currentData || !currentData.marks) return [];
+  return currentData.marks[getMarkPathKey(path)] || [];
+}
+
+function toggleMark(path, markType) {
+  if (!currentData.marks) currentData.marks = {};
+  const key = getMarkPathKey(path);
+  const existing = currentData.marks[key] || [];
+  const idx = existing.indexOf(markType);
+  if (idx === -1) {
+    currentData.marks[key] = [...existing, markType];
+  } else {
+    const updated = existing.filter(m => m !== markType);
+    if (updated.length) currentData.marks[key] = updated;
+    else delete currentData.marks[key];
+  }
+  renderChartView(currentData);
+}
+
+function wrapWithMarks(path, innerHtml) {
+  const marks = getMarksForPath(path);
+  if (!marks.length) return innerHtml;
+  let decorHtml = '';
+  if (marks.includes('stop')) {
+    decorHtml += `<svg class="mark-stop" viewBox="0 0 40 40"><polygon points="20,4 36,33 4,33" fill="none" stroke="var(--red)" stroke-width="1.6"/></svg>`;
+  }
+  if (marks.includes('push')) {
+    decorHtml += `<span class="mark-push">&lt;</span>`;
+  }
+  if (marks.includes('dot')) {
+    decorHtml += `<span class="mark-dot"></span>`;
+  }
+  return `<span class="marked-chord">${decorHtml}${innerHtml}</span>`;
+}
+
+function toggleDiamond(secIdx, barIdx) {
+  const bar = currentData.sections[secIdx].bars[barIdx];
+  if (typeof bar === 'string') {
+    currentData.sections[secIdx].bars[barIdx] = { diamond: bar };
+  } else if (bar && bar.diamond) {
+    currentData.sections[secIdx].bars[barIdx] = bar.diamond;
+  } else {
+    showToast('Sustain only applies to a whole bar, not part of a split or group.');
+    return;
+  }
+  renderChartView(currentData);
+}
 
 function splitSectionAtBar(secIdx, barIdx) {
   const section = currentData.sections[secIdx];
@@ -1606,13 +1761,17 @@ function wavyHeaderSVG() {
 function renderBar(bar, path) {
   const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
-    return `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
+    const inner = `<span class="bar-single" ${editable(path, displayValueFor(bar), locked)}</span>`;
+    return wrapWithMarks(path, inner);
   }
   if (bar.split) {
     const wide = displayMode === 'chords';
     const boxSize = wide ? 26 : 20;
     const lineMargin = wide ? 3 : 2;
     const lineFar = boxSize - lineMargin;
+    // Note: marks aren't supported on individual split-bar halves -- the
+    // box is already very tight (20-26px) and overlay marks would just
+    // look cramped/broken there. Marks apply to whole plain bars only.
     return `
       <span class="bar-split${wide ? ' wide' : ''}">
         <svg viewBox="0 0 ${boxSize} ${boxSize}"><line x1="${lineMargin}" y1="${lineFar}" x2="${lineFar}" y2="${lineMargin}" stroke="var(--ink)" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -1621,11 +1780,12 @@ function renderBar(bar, path) {
       </span>`;
   }
   if (bar.diamond) {
-    return `
+    const inner = `
       <span class="bar-diamond">
         <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
         <span ${editable([...path, 'diamond'], displayValueFor(bar.diamond), locked)}</span>
       </span>`;
+    return wrapWithMarks([...path, 'diamond'], inner);
   }
   if (bar.group) {
     const wide = displayMode === 'chords';
@@ -1703,6 +1863,14 @@ function renderChartView(data) {
           <button class="shell-btn" id="saveBtn">Save to Library</button>
         </div>
       </div>
+      ${editMode ? `
+        <div class="tool-palette no-print">
+          <button class="tool-btn" data-tool="diamond" title="Sustain">◇</button>
+          <button class="tool-btn" data-tool="push" title="Push (early hit)">&lt;</button>
+          <button class="tool-btn" data-tool="stop" title="Stop">△</button>
+          <button class="tool-btn" data-tool="dot" title="Single hit">•</button>
+        </div>
+      ` : ''}
       <div class="sheet" id="sheet"></div>
     </div>
   `;
@@ -1719,8 +1887,19 @@ function renderChartView(data) {
   });
   document.getElementById('editToggleBtn').addEventListener('click', () => {
     editMode = !editMode;
+    activeMarkTool = null;
     renderChartView(currentData);
   });
+
+  if (editMode) {
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tool = btn.dataset.tool;
+        activeMarkTool = activeMarkTool === tool ? null : tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === activeMarkTool));
+      });
+    });
+  }
 
   const sheet = document.getElementById('sheet');
   const sectionsHtml = (data.sections || []).map((s, i) => renderSection(s, i)).join('');
@@ -1767,6 +1946,23 @@ function renderChartView(data) {
     if (e.target.closest('#addSectionBtn')) {
       addNewSection();
       return;
+    }
+  });
+
+  sheet.addEventListener('mousedown', (e) => {
+    if (!activeMarkTool) return; // no tool selected -- let normal editing happen
+    const target = e.target.closest('[data-path]');
+    if (!target) return;
+    e.preventDefault(); // block the contenteditable focus/cursor from opening
+    const path = JSON.parse(target.getAttribute('data-path'));
+    if (activeMarkTool === 'diamond') {
+      if (path.length === 3 && path[0] === 'bar') {
+        toggleDiamond(path[1], path[2]);
+      } else {
+        showToast('Sustain only applies to a whole bar, not part of a split or group.');
+      }
+    } else {
+      toggleMark(path, activeMarkTool);
     }
   });
 
