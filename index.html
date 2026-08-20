@@ -894,10 +894,40 @@
   .save-toast.show { opacity: 1; }
 
   @media (max-width: 560px) {
-    .sheet { padding: 28px 20px 36px; }
+    .sheet { padding: 24px 16px 32px; }
     .section-row { flex-direction: column; align-items: flex-start; gap: 8px; }
     .section-label-col { width: auto; }
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
+
+    /* Everything below is sized down specifically for narrow screens --
+       desktop rules above are untouched. The grid columns already shrink
+       proportionally on their own; the problem was that fixed-pixel text
+       and boxes (tuned for desktop) stayed the same size regardless,
+       making them too big relative to how narrow each column gets. */
+
+    .title-text { font-size: 21px; }
+    .section-label { font-size: 15px; }
+    .kt-chip .kt-value, .kt-select { font-size: 14px; }
+    .kt-chip { padding: 4px 9px; min-width: 68px; }
+
+    .bar-single { font-size: 19px; }
+
+    .section-bars { column-gap: 7px; }
+    .bar-group { gap: 8px; }
+
+    .bar-diamond { width: 23px; height: 23px; }
+    .bar-diamond span { font-size: 11px; }
+
+    .bar-split { width: 16px; height: 16px; }
+    .bar-split .split-top, .bar-split .split-bottom { font-size: 8px; }
+
+    .bar-split.wide { width: 22px; height: 22px; }
+    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 10px; }
+
+    .mark-push { top: -12px; font-size: 12px; }
+    .mark-dot { top: -7px; }
+    .mark-stop { width: 22px; height: 22px; }
+    .bar-tie { right: -14px; width: 22px; }
   }
 
   /* --- print / save-as-PDF --- */
