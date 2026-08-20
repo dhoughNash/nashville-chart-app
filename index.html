@@ -900,10 +900,7 @@
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
 
     /* Everything below is sized down specifically for narrow screens --
-       desktop rules above are untouched. The grid columns already shrink
-       proportionally on their own; the problem was that fixed-pixel text
-       and boxes (tuned for desktop) stayed the same size regardless,
-       making them too big relative to how narrow each column gets. */
+       desktop rules above are untouched. */
 
     .title-text { font-size: 21px; }
     .section-label { font-size: 15px; }
@@ -912,8 +909,27 @@
 
     .bar-single { font-size: 19px; }
 
-    .section-bars { column-gap: 7px; }
-    .bar-group { gap: 8px; }
+    /* The rigid "exactly 8 bars in one row" grid is what was actually
+       causing the overlap -- several "bars" are 2-chord groups needing
+       double the space, and a phone is only so wide. Switching to a
+       natural flex-wrap here means bars just wrap onto a new line when
+       they run out of room, instead of being forced to compress into a
+       fixed column no matter what. Trade-off: the mid-line dot won't
+       always land perfectly centered like it does on desktop. */
+    .section-bars {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 12px;
+      row-gap: 16px;
+    }
+
+    /* !important because the group's gap is set via inline style in JS
+       (computed per-bar for desktop's tighter grid math), which otherwise
+       silently beats any plain CSS rule here regardless of media query. */
+    .bar-group { gap: 8px !important; }
+
+    .group-dot { margin: 0 2px; }
 
     .bar-diamond { width: 23px; height: 23px; }
     .bar-diamond span { font-size: 11px; }
