@@ -85,6 +85,26 @@
     gap: 10px;
   }
 
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .user-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-right: 16px;
+    border-right: 1px solid var(--shell-edge);
+  }
+
+  .user-email {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--shell-text-dim);
+  }
+
   .auth-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
@@ -103,6 +123,56 @@
     cursor: pointer;
   }
   .auth-btn:hover { color: var(--shell-text); border-color: var(--brass); }
+
+  .login-view {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 70vh;
+  }
+
+  .login-panel {
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 10px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 340px;
+  }
+
+  .login-title {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 24px;
+    color: var(--brass);
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  .login-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--shell-text-dim);
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .login-toggle {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--shell-text-dim);
+    margin-top: 14px;
+  }
+  .login-toggle a { color: var(--brass); text-decoration: none; }
+  .login-toggle a:hover { text-decoration: underline; }
+
+  #loginErrorMsg {
+    color: var(--red);
+    font-size: 12px;
+    margin-top: 12px;
+    text-align: center;
+    display: none;
+  }
 
   /* --- shared layout --- */
 
@@ -868,6 +938,7 @@
   }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -879,7 +950,10 @@
       <button class="nav-tab" id="tabLibrary">Library</button>
       <button class="nav-tab" id="tabNew">New Chart</button>
     </div>
-    <div id="authStatus" class="auth-status"></div>
+    <div class="nav-right">
+      <div id="userStatus" class="user-status"></div>
+      <div id="authStatus" class="auth-status"></div>
+    </div>
   </nav>
 
   <div id="viewContainer"></div>
@@ -887,6 +961,16 @@
   <div class="save-toast" id="saveToast">Saved to library</div>
 
 <script>
+// ---------- Supabase login (app access gate -- separate from Google Drive sync) ----------
+// Same Supabase project as your other apps, so any existing account works
+// here too. This gates the whole app -- nothing else renders until signed in.
+
+const SUPABASE_URL = 'https://ydxriywpkkdptwcuqaaj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkeHJpeXdwa2tkcHR3Y3VxYWFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1Njc5NjYsImV4cCI6MjA5NDE0Mzk2Nn0.SYACMatBKKEZV0Wo3rJ6iPSzt0E14qXjT2DieUsG9Zk';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser = null; // Supabase user object once signed in
+
 const viewContainer = document.getElementById('viewContainer');
 const tabLibrary = document.getElementById('tabLibrary');
 const tabNew = document.getElementById('tabNew');
@@ -1472,7 +1556,87 @@ function showToast(msg) {
 
 // ---------- library view ----------
 
+// ---------- login view ----------
+
+function renderLoginView(prefillMode) {
+  const mode = prefillMode || 'signin'; // 'signin' | 'signup'
+  viewContainer.innerHTML = `
+    <div class="view login-view">
+      <div class="login-panel">
+        <div class="login-title">Nashville Chart Book</div>
+        <div class="login-subtitle">Sign in to continue</div>
+        <div class="field">
+          <label for="loginEmail">Email</label>
+          <input type="text" id="loginEmail" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" placeholder="••••••••">
+        </div>
+        <div class="btn-row">
+          <button class="shell-btn" id="loginSubmitBtn">${mode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+        </div>
+        <div class="login-toggle">
+          ${mode === 'signup'
+            ? `Already have an account? <a href="#" id="toggleToSignin">Sign in</a>`
+            : `Need an account? <a href="#" id="toggleToSignup">Create one</a>`}
+        </div>
+        <div id="loginErrorMsg"></div>
+      </div>
+    </div>
+  `;
+
+  const emailInput = document.getElementById('loginEmail');
+  const passwordInput = document.getElementById('loginPassword');
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const errorMsg = document.getElementById('loginErrorMsg');
+
+  function showLoginError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
+
+  const toggleLink = document.getElementById(mode === 'signup' ? 'toggleToSignin' : 'toggleToSignup');
+  toggleLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    renderLoginView(mode === 'signup' ? 'signin' : 'signup');
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    errorMsg.style.display = 'none';
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    if (!email || !password) { showLoginError('Enter both email and password.'); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = mode === 'signup' ? 'Creating account...' : 'Signing in...';
+
+    try {
+      if (mode === 'signup') {
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) throw error;
+        if (data.user && !data.session) {
+          showLoginError('Account created -- check your email to confirm before signing in.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Account';
+          return;
+        }
+      } else {
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+      // onAuthStateChange handles moving into the app once session is set
+    } catch (err) {
+      showLoginError(err.message || 'Something went wrong.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = mode === 'signup' ? 'Create Account' : 'Sign In';
+    }
+  });
+}
+
+async function signOutOfApp() {
+  await sb.auth.signOut();
+}
+
 async function renderLibraryView() {
+  if (!currentUser) { renderLoginView(); return; }
   setActiveTab('library');
   viewContainer.innerHTML = `
     <div class="view">
@@ -1539,6 +1703,7 @@ async function renderLibraryView() {
 // ---------- upload / new chart view ----------
 
 function renderUploadView() {
+  if (!currentUser) { renderLoginView(); return; }
   setActiveTab('new');
   viewContainer.innerHTML = `
     <div class="view">
@@ -2196,9 +2361,35 @@ window.addEventListener('afterprint', () => {
 });
 
 // ---------- boot ----------
-updateAuthUI();
-attemptSilentSignIn();
-renderLibraryView();
+
+function updateUserStatusUI() {
+  const el = document.getElementById('userStatus');
+  if (!el) return;
+  if (currentUser) {
+    el.innerHTML = `<span class="user-email">${currentUser.email}</span><button class="auth-btn" id="appSignOutBtn">Log out</button>`;
+    document.getElementById('appSignOutBtn').addEventListener('click', signOutOfApp);
+  } else {
+    el.innerHTML = '';
+  }
+  // Hide the nav tabs entirely while signed out -- otherwise they'd still
+  // be clickable and bypass the login screen.
+  document.querySelector('.nav-tabs').style.display = currentUser ? 'flex' : 'none';
+}
+
+// onAuthStateChange fires once immediately on subscription with whatever the
+// current session state already is, so this single listener handles both
+// the initial page-load check and any later sign-in/sign-out.
+sb.auth.onAuthStateChange((event, session) => {
+  currentUser = session ? session.user : null;
+  updateUserStatusUI();
+  if (currentUser) {
+    updateAuthUI();
+    attemptSilentSignIn();
+    renderLibraryView();
+  } else {
+    renderLoginView();
+  }
+});
 </script>
 </body>
 </html>
