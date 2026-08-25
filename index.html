@@ -822,6 +822,17 @@
     pointer-events: none;
   }
 
+  .mark-seventh {
+    position: absolute;
+    top: -10px;
+    right: -9px;
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+    color: var(--ink);
+    -webkit-text-stroke: 0.35px var(--ink);
+    pointer-events: none;
+  }
+
   .mark-stop {
     position: absolute;
     top: 50%;
@@ -968,6 +979,8 @@
 
     .mark-push { top: -12px; font-size: 12px; }
     .mark-dot { top: -7px; }
+    .mark-beatcount { top: -11px; font-size: 10px; }
+    .mark-seventh { top: -8px; right: -7px; font-size: 10px; }
     .mark-stop { width: 22px; height: 22px; }
     .bar-tie { right: -14px; width: 22px; }
   }
@@ -2002,6 +2015,9 @@ function wrapWithMarks(path, innerHtml) {
   if (marks.includes('six')) {
     decorHtml += `<span class="mark-beatcount">6</span>`;
   }
+  if (marks.includes('seventh')) {
+    decorHtml += `<span class="mark-seventh">7</span>`;
+  }
   return `<span class="marked-chord">${decorHtml}${innerHtml}</span>`;
 }
 
@@ -2307,6 +2323,7 @@ function renderChartView(data) {
           <button class="tool-btn${activeMarkTool === 'dot' ? ' active' : ''}" data-tool="dot" title="Single hit">•</button>
           <button class="tool-btn${activeMarkTool === 'two' ? ' active' : ''}" data-tool="two" title="Label as 2 beats">2</button>
           <button class="tool-btn${activeMarkTool === 'six' ? ' active' : ''}" data-tool="six" title="Label as 6 beats">6</button>
+          <button class="tool-btn${activeMarkTool === 'seventh' ? ' active' : ''}" data-tool="seventh" title="7th chord">7</button>
           <button class="tool-btn${activeMarkTool === 'tie' ? ' active' : ''}" data-tool="tie" title="Tie">⌢</button>
         </div>
       ` : ''}
