@@ -760,6 +760,17 @@
   .bar-diamond svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .bar-diamond span { font-family: 'Architects Daughter', cursive; font-size: 14px; color: var(--ink); -webkit-text-stroke: 0.6px var(--ink); position: relative; }
 
+  .bar-box {
+    position: relative;
+    width: 26px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bar-box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .bar-box span { font-family: 'Architects Daughter', cursive; font-size: 15px; color: var(--ink); -webkit-text-stroke: 0.6px var(--ink); position: relative; }
+
   .group-dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--ink); align-self: center; justify-self: center;
@@ -796,6 +807,18 @@
     height: 5px;
     border-radius: 50%;
     background: var(--ink);
+    pointer-events: none;
+  }
+
+  .mark-beatcount {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Architects Daughter', cursive;
+    font-size: 13px;
+    color: var(--ink);
+    -webkit-text-stroke: 0.4px var(--ink);
     pointer-events: none;
   }
 
@@ -933,6 +956,9 @@
 
     .bar-diamond { width: 23px; height: 23px; }
     .bar-diamond span { font-size: 11px; }
+
+    .bar-box { width: 20px; height: 30px; }
+    .bar-box span { font-size: 11px; }
 
     .bar-split { width: 16px; height: 16px; }
     .bar-split .split-top, .bar-split .split-bottom { font-size: 8px; }
@@ -1970,6 +1996,12 @@ function wrapWithMarks(path, innerHtml) {
   if (marks.includes('dot')) {
     decorHtml += `<span class="mark-dot"></span>`;
   }
+  if (marks.includes('two')) {
+    decorHtml += `<span class="mark-beatcount">2</span>`;
+  }
+  if (marks.includes('six')) {
+    decorHtml += `<span class="mark-beatcount">6</span>`;
+  }
   return `<span class="marked-chord">${decorHtml}${innerHtml}</span>`;
 }
 
@@ -2005,6 +2037,22 @@ function toggleDiamond(path) {
     setValueAtBarPath(path, val.diamond);
   } else {
     showToast('Sustain only applies to a single chord, not a split or a whole group.');
+    return;
+  }
+  renderChartView(currentData);
+}
+
+function toggleBox(path) {
+  // A tall rectangle around a chord -- marks a bar as an alternative to the
+  // standard 4-beat measure (e.g. a bar of 6, or 2 extra beats). Combine
+  // with the "2" or "6" overlay marks to label exactly which.
+  const val = getValueAtBarPath(path);
+  if (typeof val === 'string') {
+    setValueAtBarPath(path, { box: val });
+  } else if (val && val.box) {
+    setValueAtBarPath(path, val.box);
+  } else {
+    showToast('Extended bar only applies to a single chord, not a split or a whole group.');
     return;
   }
   renderChartView(currentData);
@@ -2153,6 +2201,14 @@ function renderBar(bar, path, inGroup) {
       </span>`;
     return wrapWithMarks([...path, 'diamond'], inner);
   }
+  if (bar.box) {
+    const inner = `
+      <span class="bar-box">
+        <svg viewBox="0 0 26 40" preserveAspectRatio="none"><rect x="2" y="2" width="22" height="36" rx="2" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
+        <span ${editable([...path, 'box'], displayValueFor(bar.box), locked)}</span>
+      </span>`;
+    return wrapWithMarks([...path, 'box'], inner);
+  }
   if (bar.group) {
     // Chord names are wider than plain numerals, so groups need a bit more
     // breathing room in chords mode regardless of content -- but a group
@@ -2244,10 +2300,13 @@ function renderChartView(data) {
       ${editMode ? `
         <div class="tool-palette no-print">
           <button class="tool-btn${activeMarkTool === 'diamond' ? ' active' : ''}" data-tool="diamond" title="Sustain">◇</button>
+          <button class="tool-btn${activeMarkTool === 'box' ? ' active' : ''}" data-tool="box" title="Extended bar (e.g. bar of 6)">▯</button>
           <button class="tool-btn${activeMarkTool === 'splitbar' ? ' active' : ''}" data-tool="splitbar" title="Split bar (underlined)">_</button>
           <button class="tool-btn${activeMarkTool === 'push' ? ' active' : ''}" data-tool="push" title="Push (early hit)">&lt;</button>
           <button class="tool-btn${activeMarkTool === 'stop' ? ' active' : ''}" data-tool="stop" title="Stop">△</button>
           <button class="tool-btn${activeMarkTool === 'dot' ? ' active' : ''}" data-tool="dot" title="Single hit">•</button>
+          <button class="tool-btn${activeMarkTool === 'two' ? ' active' : ''}" data-tool="two" title="Label as 2 beats">2</button>
+          <button class="tool-btn${activeMarkTool === 'six' ? ' active' : ''}" data-tool="six" title="Label as 6 beats">6</button>
           <button class="tool-btn${activeMarkTool === 'tie' ? ' active' : ''}" data-tool="tie" title="Tie">⌢</button>
         </div>
       ` : ''}
@@ -2366,6 +2425,8 @@ function renderChartView(data) {
 
     if (activeMarkTool === 'diamond') {
       toggleDiamond(path);
+    } else if (activeMarkTool === 'box') {
+      toggleBox(path);
     } else {
       toggleMark(path, activeMarkTool);
     }
