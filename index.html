@@ -1443,6 +1443,35 @@ let googleTokenClient = null;
 
 let isSilentSignInAttempt = false;
 
+// The token itself is genuinely short-lived (~1hr) by Google's own design
+// for browser-only apps -- no refresh token is issued, on purpose, so a
+// leaked token can't be used forever. Storing it lets it survive tab
+// closes/reloads for the rest of its real lifetime, rather than requiring
+// a fresh sign-in on every single page load.
+function getStoredDriveToken() {
+  try {
+    const raw = localStorage.getItem('driveTokenData');
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data.token || !data.expiresAt || Date.now() >= data.expiresAt) {
+      localStorage.removeItem('driveTokenData');
+      return null;
+    }
+    return data.token;
+  } catch (e) {
+    return null;
+  }
+}
+function setStoredDriveToken(token, expiresInSeconds) {
+  try {
+    const expiresAt = Date.now() + (expiresInSeconds * 1000) - 60000; // 1-min safety buffer
+    localStorage.setItem('driveTokenData', JSON.stringify({ token, expiresAt }));
+  } catch (e) {}
+}
+function clearStoredDriveToken() {
+  try { localStorage.removeItem('driveTokenData'); } catch (e) {}
+}
+
 function initGoogleAuth() {
   if (googleTokenClient || typeof google === 'undefined') return;
   googleTokenClient = google.accounts.oauth2.initTokenClient({
@@ -1459,6 +1488,7 @@ function initGoogleAuth() {
       isSilentSignInAttempt = false;
       driveAccessToken = tokenResponse.access_token;
       driveSignedIn = true;
+      setStoredDriveToken(tokenResponse.access_token, tokenResponse.expires_in || 3600);
       showToast('Signed in with Google');
       updateAuthUI();
       if (document.getElementById('libraryContent')) renderLibraryView();
@@ -1467,6 +1497,18 @@ function initGoogleAuth() {
 }
 
 function attemptSilentSignIn() {
+  // Check for a still-valid stored token first -- if we have one, this is
+  // instant, no network round-trip, no popup, no third-party-cookie
+  // dependence at all.
+  const stored = getStoredDriveToken();
+  if (stored) {
+    driveAccessToken = stored;
+    driveSignedIn = true;
+    updateAuthUI();
+    if (document.getElementById('libraryContent')) renderLibraryView();
+    return;
+  }
+
   let attempts = 0;
   const maxAttempts = 30;
   const tryInit = () => {
@@ -1497,6 +1539,7 @@ function signOutGoogle() {
   }
   driveAccessToken = null;
   driveSignedIn = false;
+  clearStoredDriveToken();
   updateAuthUI();
   if (document.getElementById('libraryContent')) renderLibraryView();
 }
