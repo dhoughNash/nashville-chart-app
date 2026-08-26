@@ -674,9 +674,32 @@
   .bar-wrap:hover .bar-split-btn { opacity: 1; }
   .bar-split-btn:hover { border-color: var(--red); color: var(--red); }
 
+  .bar-delete-btn {
+    position: absolute;
+    top: -16px;
+    left: -8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1px solid var(--ink-soft);
+    color: var(--ink-soft);
+    font-size: 8px;
+    line-height: 14px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 5;
+  }
+  .bar-wrap:hover .bar-delete-btn { opacity: 1; }
+  .bar-delete-btn:hover { border-color: var(--red); color: var(--red); background: rgba(178,58,46,0.08); }
+
   /* while a mark tool is selected, hide all structural-editing controls so
      there's nothing near the chord that could be clicked by accident */
   .sheet.tool-active .bar-split-btn,
+  .sheet.tool-active .bar-delete-btn,
   .sheet.tool-active .section-controls,
   .sheet.tool-active .add-section-row {
     display: none !important;
@@ -997,7 +1020,7 @@
       background-image: none;
     }
 
-    .topnav, .save-toast, .no-print, .add-section-row, .bar-split-btn, .section-controls {
+    .topnav, .save-toast, .no-print, .add-section-row, .bar-split-btn, .bar-delete-btn, .section-controls {
       display: none !important;
     }
 
@@ -2150,6 +2173,41 @@ function addBarToSection(secIdx) {
   renderChartView(currentData);
 }
 
+function deleteBar(secIdx, barIdx) {
+  // Also clean up any tie or marks anchored to this specific bar (and shift
+  // ties on later bars down by one index) so deleting a bar doesn't leave
+  // orphaned marks pointing at a now-different bar.
+  const section = currentData.sections[secIdx];
+  section.bars.splice(barIdx, 1);
+
+  if (currentData.ties) {
+    const newTies = {};
+    Object.keys(currentData.ties).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      if (tSec !== secIdx) { newTies[key] = currentData.ties[key]; return; }
+      if (tBar === barIdx) return; // drop the tie that started on the deleted bar
+      const newBar = tBar > barIdx ? tBar - 1 : tBar;
+      newTies[`${tSec}-${newBar}`] = currentData.ties[key];
+    });
+    currentData.ties = newTies;
+  }
+
+  if (currentData.marks) {
+    const newMarks = {};
+    Object.keys(currentData.marks).forEach((key) => {
+      const path = JSON.parse(key);
+      if (path[0] !== 'bar' || path[1] !== secIdx) { newMarks[key] = currentData.marks[key]; return; }
+      if (path[2] === barIdx) return; // drop marks that lived on the deleted bar
+      const newPath = [...path];
+      if (newPath[2] > barIdx) newPath[2] -= 1;
+      newMarks[JSON.stringify(newPath)] = currentData.marks[key];
+    });
+    currentData.marks = newMarks;
+  }
+
+  renderChartView(currentData);
+}
+
 function addNewSection() {
   currentData.sections.push({ label: 'New', bars: ['1'] });
   renderChartView(currentData);
@@ -2261,6 +2319,9 @@ function renderSection(section, secIdx) {
     const splitBtnHtml = editMode
       ? `<button class="bar-split-btn" data-split-sec="${secIdx}" data-split-bar="${i}" title="Split section here">⏎</button>`
       : '';
+    const deleteBarBtnHtml = editMode
+      ? `<button class="bar-delete-btn" data-delete-bar-sec="${secIdx}" data-delete-bar-idx="${i}" title="Delete this bar">✕</button>`
+      : '';
     const tieHtml = hasTie(secIdx, i)
       ? `<svg class="bar-tie" viewBox="0 0 30 12"><path d="M2,10 Q15,-3 28,10" fill="none" stroke="var(--ink)" stroke-width="1.4"/></svg>`
       : '';
@@ -2270,6 +2331,7 @@ function renderSection(section, secIdx) {
       <span class="bar-wrap" style="justify-self:${justify}" data-bar-path='${JSON.stringify(barPath)}'>
         ${rawBarHtml}
         ${splitBtnHtml}
+        ${deleteBarBtnHtml}
         ${tieHtml}
       </span>`;
     if (i % 8 === 3 && i + 1 < section.bars.length) {
@@ -2399,6 +2461,11 @@ function renderChartView(data) {
     const splitBtn = e.target.closest('[data-split-sec]');
     if (splitBtn) {
       splitSectionAtBar(parseInt(splitBtn.dataset.splitSec, 10), parseInt(splitBtn.dataset.splitBar, 10));
+      return;
+    }
+    const deleteBarBtn = e.target.closest('[data-delete-bar-sec]');
+    if (deleteBarBtn) {
+      deleteBar(parseInt(deleteBarBtn.dataset.deleteBarSec, 10), parseInt(deleteBarBtn.dataset.deleteBarIdx, 10));
       return;
     }
     const mergeBtn = e.target.closest('[data-merge-sec]');
