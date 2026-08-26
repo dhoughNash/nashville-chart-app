@@ -1941,8 +1941,16 @@ function renderUploadView() {
       const chartData = await processAudioWithMusicAi(
         apiKey, CHORDS_WORKFLOW_SLUG, SECTIONS_WORKFLOW_SLUG, audioFile, processLogLine
       );
+      processLogLine('Saving to library...');
+      // Save immediately, before ever showing the chart -- this is the
+      // actual fix for charts disappearing: previously the chart only
+      // existed in memory until you manually clicked "Save to Library,"
+      // so anything that reset the view (losing wifi, an unexpected
+      // re-render, closing the tab) lost it for good. Now it's durably
+      // saved the moment it's generated, before anything else can happen.
+      const newChartId = await saveChartToLibrary(chartData, null);
       processLogLine('Done. Opening chart...');
-      currentChartId = null;
+      currentChartId = newChartId;
       editMode = false;
       activeMarkTool = null;
       renderChartView(chartData);
@@ -2506,12 +2514,19 @@ function updateUserStatusUI() {
 sb.auth.onAuthStateChange((event, session) => {
   currentUser = session ? session.user : null;
   updateUserStatusUI();
-  if (currentUser) {
-    updateAuthUI();
+  if (!currentUser) {
+    renderLoginView();
+    return;
+  }
+  updateAuthUI();
+  // Supabase fires this same callback periodically in the background just
+  // to refresh the session token -- that's routine and should NOT yank the
+  // person back to the Library and discard whatever they're looking at
+  // (e.g. a freshly generated, not-yet-saved chart). Only actually
+  // navigate on a real sign-in or the initial load check.
+  if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
     attemptSilentSignIn();
     renderLibraryView();
-  } else {
-    renderLoginView();
   }
 });
 </script>
