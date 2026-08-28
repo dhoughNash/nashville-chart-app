@@ -174,6 +174,39 @@
     display: none;
   }
 
+  .fix-tonic-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .fix-tonic-panel {
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 10px;
+    padding: 28px 26px;
+    width: 100%;
+    max-width: 360px;
+    margin: 20px;
+  }
+
+  .fix-tonic-title {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 20px;
+    color: var(--brass);
+    margin-bottom: 8px;
+  }
+
+  .fix-tonic-desc {
+    font-size: 12px;
+    color: var(--shell-text-dim);
+    line-height: 1.6;
+    margin: 0 0 18px 0;
+  }
+
   /* --- shared layout --- */
 
   .view {
@@ -1408,6 +1441,72 @@ const NASHVILLE_SUFFIX_TO_CHORD = {
   '+': '+', '°': 'dim', '°7': 'dim7', 'ø7': 'm7b5'
 };
 
+const MAJOR_SCALE_STEPS = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11 };
+const NUMERAL_DEGREE_MAP = { 0: '1', 2: '2', 4: '3', 5: '4', 7: '5', 9: '6', 11: '7' };
+const MAJOR_DIATONIC_STEPS = [0, 2, 4, 5, 7, 9, 11];
+
+function numeralToInterval(accidental, digit) {
+  let semitone = MAJOR_SCALE_STEPS[digit];
+  if (accidental === 'b') semitone -= 1;
+  if (accidental === '#') semitone += 1;
+  return ((semitone % 12) + 12) % 12;
+}
+
+function intervalToNumeralBase(interval) {
+  interval = ((interval % 12) + 12) % 12;
+  if (NUMERAL_DEGREE_MAP[interval]) return NUMERAL_DEGREE_MAP[interval];
+  // Same "nearest diatonic degree at or above, flattened down" convention
+  // used everywhere else in this app for chromatic chords.
+  const candidates = MAJOR_DIATONIC_STEPS.filter(s => s >= interval);
+  const upper = candidates.length ? Math.min(...candidates) : MAJOR_DIATONIC_STEPS[MAJOR_DIATONIC_STEPS.length - 1];
+  return 'b' + NUMERAL_DEGREE_MAP[upper];
+}
+
+function transposeNumeral(numeral, shift) {
+  const m = numeral.match(/^([b#]?)([1-7])(.*)$/);
+  if (!m) return numeral; // not a real numeral (e.g. "%", "N.C.") -- leave untouched
+  const [, accidental, digit, suffix] = m;
+  const interval = numeralToInterval(accidental, digit);
+  return intervalToNumeralBase(interval + shift) + suffix;
+}
+
+function transposeBarValue(bar, shift) {
+  if (typeof bar === 'string') return transposeNumeral(bar, shift);
+  if (bar.split) return { split: [transposeBarValue(bar.split[0], shift), transposeBarValue(bar.split[1], shift)] };
+  if (bar.diamond) return { diamond: transposeBarValue(bar.diamond, shift) };
+  if (bar.box) return { box: transposeBarValue(bar.box, shift) };
+  if (bar.group) return { group: bar.group.map(item => transposeBarValue(item, shift)) };
+  return bar;
+}
+
+function fixTonic(wrongNumeral, correctNumeral) {
+  const mWrong = wrongNumeral.trim().match(/^([b#]?)([1-7])/);
+  const mCorrect = correctNumeral.trim().match(/^([b#]?)([1-7])/);
+  if (!mWrong || !mCorrect) {
+    showToast('Enter numerals like "2-" or "b7", not chord names.');
+    return false;
+  }
+  const wrongInterval = numeralToInterval(mWrong[1], mWrong[2]);
+  const correctInterval = numeralToInterval(mCorrect[1], mCorrect[2]);
+  const shift = ((correctInterval - wrongInterval) % 12 + 12) % 12;
+  if (shift === 0) {
+    showToast('Those are already the same -- nothing to fix.');
+    return false;
+  }
+
+  currentData.sections.forEach(section => {
+    section.bars = section.bars.map(bar => transposeBarValue(bar, shift));
+  });
+  // Shift the displayed key by the same interval so "Show Chords" mode
+  // stays consistent with the corrected numerals.
+  const keyIdx = CHROMATIC.indexOf(normalizeKey(currentData.key));
+  currentData.key = CHROMATIC[((keyIdx + shift) % 12 + 12) % 12];
+
+  renderChartView(currentData);
+  showToast('Tonic corrected across the whole chart');
+  return true;
+}
+
 function normalizeKey(raw) {
   if (!raw) return 'C';
   const first = raw.trim().split(/\s+/)[0];
@@ -1427,11 +1526,7 @@ function numberToChordName(numeral, keyRoot) {
   const m = numeral.match(/^([b#]?)([1-7])(.*)$/);
   if (!m) return numeral;
   const [, accidental, digit, suffix] = m;
-  const majorSteps = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11 };
-  let semitone = majorSteps[digit];
-  if (accidental === 'b') semitone -= 1;
-  if (accidental === '#') semitone += 1;
-  semitone = ((semitone % 12) + 12) % 12;
+  const semitone = numeralToInterval(accidental, digit);
   const chordRoot = CHROMATIC[(rootIdx + semitone) % 12];
   const chordSuffix = NASHVILLE_SUFFIX_TO_CHORD.hasOwnProperty(suffix) ? NASHVILLE_SUFFIX_TO_CHORD[suffix] : suffix;
   return chordRoot + chordSuffix;
@@ -2481,10 +2576,29 @@ function renderChartView(data) {
         <span class="edit-hint">${hintText}</span>
         <div class="toolbar-actions">
           <button class="shell-btn secondary" id="modeToggleBtn">${displayMode === 'numbers' ? 'Show Chords' : 'Show Numbers'}</button>
+          ${editMode ? `<button class="shell-btn secondary" id="fixTonicBtn">Fix Tonic</button>` : ''}
           <button class="shell-btn secondary" id="printBtn">Print / Save PDF</button>
           <button class="shell-btn secondary" id="backBtn">← Library</button>
           <button class="shell-btn${editMode ? '' : ' secondary'}" id="editToggleBtn">${editMode ? 'Done Editing' : 'Edit'}</button>
           <button class="shell-btn" id="saveBtn">Save to Library</button>
+        </div>
+      </div>
+      <div class="fix-tonic-overlay" id="fixTonicOverlay" style="display:none">
+        <div class="fix-tonic-panel">
+          <div class="fix-tonic-title">Fix Tonic</div>
+          <p class="fix-tonic-desc">Enter a Nashville numeral that's currently showing wrong, and what it should actually be. The same correction applies to every chord in the chart.</p>
+          <div class="field">
+            <label for="fixTonicWrong">Currently showing (wrong)</label>
+            <input type="text" id="fixTonicWrong" placeholder="e.g. 2-">
+          </div>
+          <div class="field">
+            <label for="fixTonicCorrect">Should actually be</label>
+            <input type="text" id="fixTonicCorrect" placeholder="e.g. 4-">
+          </div>
+          <div class="btn-row">
+            <button class="shell-btn" id="fixTonicApplyBtn">Apply to Whole Chart</button>
+            <button class="shell-btn secondary" id="fixTonicCancelBtn">Cancel</button>
+          </div>
         </div>
       </div>
       ${editMode ? `
@@ -2520,6 +2634,29 @@ function renderChartView(data) {
     activeMarkTool = null;
     renderChartView(currentData);
   });
+
+  const fixTonicBtn = document.getElementById('fixTonicBtn');
+  if (fixTonicBtn) {
+    const overlay = document.getElementById('fixTonicOverlay');
+    const wrongInput = document.getElementById('fixTonicWrong');
+    const correctInput = document.getElementById('fixTonicCorrect');
+    fixTonicBtn.addEventListener('click', () => {
+      wrongInput.value = '';
+      correctInput.value = '';
+      overlay.style.display = 'flex';
+      wrongInput.focus();
+    });
+    document.getElementById('fixTonicCancelBtn').addEventListener('click', () => {
+      overlay.style.display = 'none';
+    });
+    document.getElementById('fixTonicApplyBtn').addEventListener('click', () => {
+      const wrong = wrongInput.value.trim();
+      const correct = correctInput.value.trim();
+      if (!wrong || !correct) { showToast('Enter both numerals.'); return; }
+      const succeeded = fixTonic(wrong, correct);
+      if (succeeded !== false) overlay.style.display = 'none';
+    });
+  }
 
   if (editMode) {
     document.querySelectorAll('.tool-btn').forEach(btn => {
