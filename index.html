@@ -207,6 +207,63 @@
     margin: 0 0 18px 0;
   }
 
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .tier-card {
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 10px;
+    padding: 26px 22px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tier-name {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 20px;
+    color: var(--brass);
+  }
+
+  .tier-price {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 30px;
+    color: var(--shell-text);
+  }
+  .tier-price span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--shell-text-dim);
+  }
+
+  .tier-limit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--shell-text-dim);
+    margin-bottom: 10px;
+  }
+
+  .tier-subscribe-btn {
+    width: 100%;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    box-sizing: border-box;
+  }
+
+  .paywall-footer {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+  }
+
   /* --- shared layout --- */
 
   .view {
@@ -1113,6 +1170,7 @@
     <div class="nav-tabs">
       <button class="nav-tab" id="tabLibrary">Library</button>
       <button class="nav-tab" id="tabNew">New Chart</button>
+      <button class="nav-tab" id="tabPlans">Plans</button>
     </div>
     <div class="nav-right">
       <div id="userStatus" class="user-status"></div>
@@ -1134,10 +1192,60 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null; // Supabase user object once signed in
+let currentSubscription = null; // this user's row from the subscriptions table
+
+const STRIPE_PAYMENT_LINKS = {
+  starter: 'https://buy.stripe.com/dRm4gB3VC5iTacl0MD9R603',
+  pro: 'https://buy.stripe.com/00w5kFeAgcLlckt3YP9R604',
+  unlimited: 'https://buy.stripe.com/fZu28tcs87r12JT7b19R605',
+};
+
+function subscribeUrl(tier) {
+  return `${STRIPE_PAYMENT_LINKS[tier]}?client_reference_id=${currentUser.id}`;
+}
+
+async function loadSubscriptionStatus() {
+  const { data, error } = await sb
+    .from('subscriptions')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to load subscription status', error);
+    currentSubscription = null;
+    return;
+  }
+
+  if (!data) {
+    // First login ever -- create the row ourselves now so the webhook
+    // always has something to update later, rather than depending on it
+    // to create the very first row (which is also handled defensively on
+    // that end, but this is the normal path).
+    const { data: inserted, error: insertError } = await sb
+      .from('subscriptions')
+      .insert({ user_id: currentUser.id, status: 'inactive' })
+      .select()
+      .single();
+    if (insertError) {
+      console.error('Failed to create subscription row', insertError);
+      currentSubscription = null;
+      return;
+    }
+    currentSubscription = inserted;
+  } else {
+    currentSubscription = data;
+  }
+}
+
+function isSubscriptionActive() {
+  return !!(currentSubscription && currentSubscription.status === 'active');
+}
 
 const viewContainer = document.getElementById('viewContainer');
 const tabLibrary = document.getElementById('tabLibrary');
 const tabNew = document.getElementById('tabNew');
+const tabPlans = document.getElementById('tabPlans');
 const saveToast = document.getElementById('saveToast');
 
 let currentData = null;      // chart currently open in the chart view
@@ -1812,10 +1920,16 @@ async function deleteChartFromLibrary(id) {
 function setActiveTab(tab) {
   tabLibrary.classList.toggle('active', tab === 'library');
   tabNew.classList.toggle('active', tab === 'new');
+  tabPlans.classList.toggle('active', tab === 'plans');
 }
 
 tabLibrary.addEventListener('click', () => renderLibraryView());
 tabNew.addEventListener('click', () => renderUploadView());
+tabPlans.addEventListener('click', () => {
+  if (!currentUser) { renderLoginView(); return; }
+  setActiveTab('plans');
+  renderPaywallView();
+});
 
 function showToast(msg) {
   saveToast.textContent = msg;
@@ -1902,6 +2016,61 @@ function renderLoginView(prefillMode) {
 
 async function signOutOfApp() {
   await sb.auth.signOut();
+}
+
+// ---------- paywall view ----------
+
+function renderPaywallView() {
+  setActiveTab('plans');
+  viewContainer.innerHTML = `
+    <div class="view">
+      <div class="view-header">
+        <div>
+          <h1>Choose a Plan</h1>
+          <p>Pick a tier to process charts without needing your own Music AI account.</p>
+        </div>
+      </div>
+      <div class="tier-grid">
+        <div class="tier-card">
+          <div class="tier-name">Starter</div>
+          <div class="tier-price">$12<span>/mo</span></div>
+          <div class="tier-limit">10 charts / month</div>
+          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('starter')}" target="_blank" rel="noopener">Subscribe</a>
+        </div>
+        <div class="tier-card">
+          <div class="tier-name">Pro</div>
+          <div class="tier-price">$29<span>/mo</span></div>
+          <div class="tier-limit">30 charts / month</div>
+          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('pro')}" target="_blank" rel="noopener">Subscribe</a>
+        </div>
+        <div class="tier-card">
+          <div class="tier-name">Unlimited</div>
+          <div class="tier-price">$79<span>/mo</span></div>
+          <div class="tier-limit">100 charts / month</div>
+          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('unlimited')}" target="_blank" rel="noopener">Subscribe</a>
+        </div>
+      </div>
+      <div class="paywall-footer">
+        <button class="shell-btn secondary" id="paywallRefreshBtn">I just subscribed -- check again</button>
+        <button class="auth-btn" id="paywallSignOutBtn">Log out</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('paywallRefreshBtn').addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    await loadSubscriptionStatus();
+    if (isSubscriptionActive()) {
+      renderLibraryView();
+    } else {
+      showToast("Not showing as active yet -- Stripe can take a few seconds to notify us. Try again shortly.");
+      btn.disabled = false;
+      btn.textContent = 'I just subscribed -- check again';
+    }
+  });
+  document.getElementById('paywallSignOutBtn').addEventListener('click', signOutOfApp);
 }
 
 async function renderLibraryView() {
@@ -2839,6 +3008,11 @@ sb.auth.onAuthStateChange((event, session) => {
   // navigate on a real sign-in or the initial load check.
   if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
     attemptSilentSignIn();
+    // Quietly seed/refresh the subscription row in the background -- this
+    // doesn't gate anything yet (BYOK stays free), it just makes sure the
+    // row exists for whenever the managed-key feature is built and actually
+    // needs to check it.
+    loadSubscriptionStatus();
     renderLibraryView();
   }
 });
