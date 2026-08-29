@@ -402,6 +402,23 @@
     font-weight: 400;
   }
 
+  .managed-banner {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--brass);
+    background: rgba(184, 146, 90, 0.1);
+    border: 1px solid rgba(184, 146, 90, 0.35);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+  }
+  .managed-banner-off {
+    color: var(--shell-text-dim);
+    background: transparent;
+    border-color: var(--shell-edge);
+  }
+  .managed-banner-off a { color: var(--brass); }
+
   .panel-divider {
     text-align: center;
     font-family: 'JetBrains Mono', monospace;
@@ -1470,6 +1487,110 @@ async function musicaiUploadFile(apiKey, file, logFn) {
   return downloadUrl;
 }
 
+// ---------- Managed processing via the Netlify relay (no key needed) ----------
+
+const RELAY_URL = '/.netlify/functions/musicai-relay';
+
+async function relayCall(action, params) {
+  const resp = await fetch(RELAY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, userId: currentUser.id, ...params }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `Relay error: HTTP ${resp.status}`);
+  return data;
+}
+
+async function checkManagedEligibility() {
+  try {
+    return await relayCall('check-eligibility', {});
+  } catch (err) {
+    return { eligible: false, reason: err.message };
+  }
+}
+
+async function relayUploadFile() {
+  const { uploadUrl, downloadUrl } = await relayCall('get-upload-url', {});
+  return { uploadUrl, downloadUrl };
+}
+
+async function relayPollAndGetResult(jobId, logFn) {
+  const maxAttempts = 80;
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const status = await relayCall('check-status', { jobId });
+    logFn(`  [${(i + 1) * 3}s] status: ${status.status}`);
+    if (status.status === 'SUCCEEDED') {
+      const final = await relayCall('get-job-result', { jobId });
+      return final.result;
+    }
+    if (status.status === 'FAILED') throw new Error("Job failed on Music AI's side.");
+  }
+  throw new Error('Timed out waiting for job to complete.');
+}
+
+async function processAudioViaRelay(chordsWorkflowSlug, sectionsWorkflowSlug, file, logFn) {
+  logFn('Uploading audio for chords & beats job...');
+  const { uploadUrl, downloadUrl } = await relayUploadFile();
+  const putResp = await fetch(uploadUrl, { method: 'PUT', body: file });
+  if (!putResp.ok) throw new Error(`File upload failed: HTTP ${putResp.status}`);
+
+  logFn('Submitting chords & beats job...');
+  const chordsJob = await relayCall('submit-job', { workflow: chordsWorkflowSlug, inputUrl: downloadUrl, name: 'Nashville chart' });
+  logFn(`Chords job submitted: ${chordsJob.id}. Waiting...`);
+
+  const chordsResult = await relayPollAndGetResult(chordsJob.id, logFn);
+  const bpm = chordsResult.bpm;
+  const keyString = chordsResult['root key'] || 'C major';
+  logFn(`Key: ${keyString}, BPM: ${bpm}`);
+
+  const chordsData = await (await fetch(chordsResult['chords map'])).json();
+  logFn(`Got ${chordsData.length} chord segments.`);
+
+  const beatsRaw = await (await fetch(chordsResult['beat map'])).json();
+  const beatsList = beatsRaw.map(b => [b.time, b.beatNum]);
+  const downbeats = musicaiGetDownbeats(beatsList);
+  logFn(`Got ${downbeats.length} downbeats.`);
+
+  let sectionsData = null;
+  if (sectionsWorkflowSlug) {
+    try {
+      logFn('Re-uploading for sections job...');
+      const { uploadUrl: uploadUrl2, downloadUrl: downloadUrl2 } = await relayUploadFile();
+      const put2 = await fetch(uploadUrl2, { method: 'PUT', body: file });
+      if (!put2.ok) throw new Error(`HTTP ${put2.status}`);
+      logFn('Submitting sections job...');
+      const sectionsJob = await relayCall('submit-job', { workflow: sectionsWorkflowSlug, inputUrl: downloadUrl2, name: 'Nashville chart - sections' });
+      const sectionsResult = await relayPollAndGetResult(sectionsJob.id, logFn);
+      sectionsData = await (await fetch(sectionsResult.sections)).json();
+      logFn(`Got ${sectionsData.length} structural segments.`);
+    } catch (err) {
+      logFn(`Sections detection failed (${err.message}) -- continuing with one "Song" section.`);
+      sectionsData = null;
+    }
+  }
+
+  const [keyTonic, keyMode] = parseMusicAiKeyString(keyString);
+  const bars = buildBarsFromMusicAiData(chordsData, keyTonic, keyMode);
+  logFn(`Built ${bars.length} bars.`);
+
+  const sections = sectionsData
+    ? assignMusicAiSections(bars, downbeats, sectionsData)
+    : [{ label: 'Song', bars: bars.map(musicaiBarToShorthand) }];
+
+  // Only now, on genuine success, tell the relay to consume a unit of
+  // usage (or the free trial) -- a failed attempt never costs the user.
+  await relayCall('mark-complete', {});
+
+  return {
+    title: file.name.replace(/\.[^/.]+$/, ''),
+    key: keyTonic,
+    tempo: bpm ? String(bpm) : '',
+    sections,
+  };
+}
+
 async function processAudioWithMusicAi(apiKey, chordsWorkflowSlug, sectionsWorkflowSlug, file, logFn) {
   logFn('Uploading audio for chords & beats job...');
   const downloadUrl = await musicaiUploadFile(apiKey, file, logFn);
@@ -2140,9 +2261,17 @@ async function renderLibraryView() {
 
 // ---------- upload / new chart view ----------
 
-function renderUploadView() {
+async function renderUploadView() {
   if (!currentUser) { renderLoginView(); return; }
   setActiveTab('new');
+
+  const eligibility = await checkManagedEligibility();
+  const useManagedMode = eligibility.eligible;
+
+  const managedBannerHtml = useManagedMode
+    ? `<div class="managed-banner">${eligibility.mode === 'trial' ? "Using your free trial chart -- no key needed." : "Covered by your subscription -- no key needed."}</div>`
+    : `<div class="managed-banner managed-banner-off">No active subscription and your free trial is used. <a href="#" id="goToPlansLink">Subscribe</a>, or use your own Music AI key below.</div>`;
+
   viewContainer.innerHTML = `
     <div class="view">
       <div class="view-header">
@@ -2155,8 +2284,9 @@ function renderUploadView() {
       <div class="upload-panel">
         <h2 class="panel-heading">Drop your recording here...</h2>
         <p>Drop in an audio file and this handles chords, key, tempo, and song structure automatically via Music AI.</p>
+        ${managedBannerHtml}
 
-        <div id="apiKeySetup" style="display:${getStoredApiKey() ? 'none' : 'block'}">
+        <div id="apiKeySetup" style="display:${useManagedMode || getStoredApiKey() ? 'none' : 'block'}">
           <div class="field">
             <label for="musicAiKeySetup">Music AI API Key (saved once, never shown again)</label>
             <input type="password" id="musicAiKeySetup" placeholder="paste your key">
@@ -2166,7 +2296,7 @@ function renderUploadView() {
           </div>
         </div>
 
-        <div id="dropZone" class="drop-zone" style="display:${getStoredApiKey() ? 'flex' : 'none'}">
+        <div id="dropZone" class="drop-zone" style="display:${useManagedMode || getStoredApiKey() ? 'flex' : 'none'}">
           <div class="drop-zone-text" id="dropZoneText">Drop an audio file here, or click to choose one</div>
           <input type="file" id="processAudioFile" accept="audio/*" class="drop-zone-input">
         </div>
@@ -2187,12 +2317,17 @@ function renderUploadView() {
 
         <div class="process-log" id="processLog" style="display:none"></div>
         <div id="processErrorMsg"></div>
-        <div class="key-manage-link" id="keyManageLink" style="display:${getStoredApiKey() ? 'block' : 'none'}">
+        <div class="key-manage-link" id="keyManageLink" style="display:${!useManagedMode && getStoredApiKey() ? 'block' : 'none'}">
           <a href="#" id="changeKeyLink">Change API key</a>
         </div>
       </div>
     </div>
   `;
+
+  const goToPlansLink = document.getElementById('goToPlansLink');
+  if (goToPlansLink) {
+    goToPlansLink.addEventListener('click', (e) => { e.preventDefault(); renderPaywallView(); });
+  }
 
   // --- direct audio processing panel ---
   const processBtn = document.getElementById('processBtn');
@@ -2280,20 +2415,23 @@ function renderUploadView() {
     processLog.innerHTML = '';
     processLog.style.display = 'none';
 
-    const apiKey = getStoredApiKey();
     const audioFile = audioFileInput.files[0];
-
-    if (!apiKey) { showKeySetup(); showProcessError('Enter your Music AI API key first.'); return; }
     if (!audioFile) { showProcessError('Choose an audio file first.'); return; }
+
+    let apiKey = null;
+    if (!useManagedMode) {
+      apiKey = getStoredApiKey();
+      if (!apiKey) { showKeySetup(); showProcessError('Enter your Music AI API key first.'); return; }
+    }
 
     processBtn.disabled = true;
     processBtn.style.display = 'none';
     document.getElementById('processingIndicator').style.display = 'flex';
 
     try {
-      const chartData = await processAudioWithMusicAi(
-        apiKey, CHORDS_WORKFLOW_SLUG, SECTIONS_WORKFLOW_SLUG, audioFile, processLogLine
-      );
+      const chartData = useManagedMode
+        ? await processAudioViaRelay(CHORDS_WORKFLOW_SLUG, SECTIONS_WORKFLOW_SLUG, audioFile, processLogLine)
+        : await processAudioWithMusicAi(apiKey, CHORDS_WORKFLOW_SLUG, SECTIONS_WORKFLOW_SLUG, audioFile, processLogLine);
       processLogLine('Saving to library...');
       // Save immediately, before ever showing the chart -- this is the
       // actual fix for charts disappearing: previously the chart only
