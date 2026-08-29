@@ -105,6 +105,19 @@
     color: var(--shell-text-dim);
   }
 
+  .user-tier {
+    font-family: 'Public Sans', sans-serif;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--shell-bg);
+    background: var(--brass);
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-left: 8px;
+  }
+
   .auth-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
@@ -1187,9 +1200,9 @@
     <div class="nav-tabs">
       <button class="nav-tab" id="tabLibrary">Library</button>
       <button class="nav-tab" id="tabNew">New Chart</button>
-      <button class="nav-tab" id="tabPlans">Plans</button>
     </div>
     <div class="nav-right">
+      <button class="nav-tab" id="tabPlans">Plans</button>
       <div id="userStatus" class="user-status"></div>
       <div id="authStatus" class="auth-status"></div>
     </div>
@@ -2268,8 +2281,11 @@ async function renderUploadView() {
   const eligibility = await checkManagedEligibility();
   const useManagedMode = eligibility.eligible;
 
+  // Only shown when something needs the person's attention -- when
+  // everything's fine (subscribed or trial available), just let them use
+  // the drop zone without narrating it.
   const managedBannerHtml = useManagedMode
-    ? `<div class="managed-banner">${eligibility.mode === 'trial' ? "Using your free trial chart -- no key needed." : "Covered by your subscription -- no key needed."}</div>`
+    ? ''
     : `<div class="managed-banner managed-banner-off">No active subscription and your free trial is used. <a href="#" id="goToPlansLink">Subscribe</a>, or use your own Music AI key below.</div>`;
 
   viewContainer.innerHTML = `
@@ -3118,7 +3134,10 @@ function updateUserStatusUI() {
   const el = document.getElementById('userStatus');
   if (!el) return;
   if (currentUser) {
-    el.innerHTML = `<span class="user-email">${currentUser.email}</span><button class="auth-btn" id="appSignOutBtn">Log out</button>`;
+    const tierLabel = (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier)
+      ? `<span class="user-tier">${currentSubscription.tier.charAt(0).toUpperCase() + currentSubscription.tier.slice(1)}</span>`
+      : '';
+    el.innerHTML = `<span class="user-email">${currentUser.email}</span>${tierLabel}<button class="auth-btn" id="appSignOutBtn">Log out</button>`;
     document.getElementById('appSignOutBtn').addEventListener('click', signOutOfApp);
   } else {
     el.innerHTML = '';
@@ -3146,11 +3165,9 @@ sb.auth.onAuthStateChange((event, session) => {
   // navigate on a real sign-in or the initial load check.
   if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
     attemptSilentSignIn();
-    // Quietly seed/refresh the subscription row in the background -- this
-    // doesn't gate anything yet (BYOK stays free), it just makes sure the
-    // row exists for whenever the managed-key feature is built and actually
-    // needs to check it.
-    loadSubscriptionStatus();
+    // Seed/refresh the subscription row, then refresh the nav display so
+    // the tier label next to the email actually shows up once it's loaded.
+    loadSubscriptionStatus().then(() => updateUserStatusUI());
     renderLibraryView();
   }
 });
