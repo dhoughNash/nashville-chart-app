@@ -8,13 +8,14 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Maps each subscription price (by its monthly amount, in cents) to a tier.
-// Matching on amount rather than Stripe Price ID -- simpler, and we already
-// know these three prices precisely.
-const TIER_BY_AMOUNT = {
-  1200: { tier: 'starter', chartsLimit: 10 },
-  2900: { tier: 'pro', chartsLimit: 30 },
-  7900: { tier: 'unlimited', chartsLimit: 100 },
+// Maps each subscription price -- by its unique Stripe Price ID, not
+// dollar amount -- to a tier. Price IDs are globally unique, so this can
+// never accidentally match a price from a different app sharing the same
+// Stripe account (matching on amount alone couldn't guarantee that).
+const TIER_BY_PRICE_ID = {
+  price_1U9nFyRru8MEHEIA9hC25Ib9: { tier: 'starter', chartsLimit: 10 },
+  price_1U9nGSRru8MEHEIAQL14YVvA: { tier: 'pro', chartsLimit: 30 },
+  price_1U9nGqRru8MEHEIAkzm4HaMG: { tier: 'unlimited', chartsLimit: 100 },
 };
 
 exports.handler = async (event) => {
@@ -37,10 +38,12 @@ exports.handler = async (event) => {
       }
 
       const subscription = await stripe.subscriptions.retrieve(session.subscription);
-      const amount = subscription.items.data[0].price.unit_amount;
-      const tierInfo = TIER_BY_AMOUNT[amount];
+      const priceId = subscription.items.data[0].price.id;
+      const tierInfo = TIER_BY_PRICE_ID[priceId];
       if (!tierInfo) {
-        return { statusCode: 200, body: `Unrecognized price amount ${amount}, ignoring.` };
+        // Not one of our three prices -- almost certainly a purchase from
+        // a different app on the same Stripe account. Ignore it.
+        return { statusCode: 200, body: `Price ${priceId} isn't one of ours, ignoring.` };
       }
 
       // Upsert, not update -- this may be the user's very first row.
@@ -57,8 +60,13 @@ exports.handler = async (event) => {
 
     if (stripeEvent.type === 'customer.subscription.updated') {
       const subscription = stripeEvent.data.object;
-      const amount = subscription.items.data[0].price.unit_amount;
-      const tierInfo = TIER_BY_AMOUNT[amount];
+      const priceId = subscription.items.data[0].price.id;
+      const tierInfo = TIER_BY_PRICE_ID[priceId];
+      if (!tierInfo) {
+        // Not one of our three prices -- a different app's subscription
+        // event on the same Stripe account. Ignore it entirely.
+        return { statusCode: 200, body: `Price ${priceId} isn't one of ours, ignoring.` };
+      }
 
       let status = 'active';
       if (['past_due', 'unpaid'].includes(subscription.status)) status = 'past_due';
@@ -66,13 +74,11 @@ exports.handler = async (event) => {
 
       const patchData = {
         status,
+        tier: tierInfo.tier,
+        charts_limit: tierInfo.chartsLimit,
         stripe_subscription_id: subscription.id,
         period_reset_at: new Date(subscription.current_period_end * 1000).toISOString(),
       };
-      if (tierInfo) {
-        patchData.tier = tierInfo.tier;
-        patchData.charts_limit = tierInfo.chartsLimit;
-      }
       // A fresh billing period (renewal, or moving between tiers) resets usage
       if (status === 'active') {
         patchData.charts_used = 0;
@@ -83,6 +89,10 @@ exports.handler = async (event) => {
 
     if (stripeEvent.type === 'customer.subscription.deleted') {
       const subscription = stripeEvent.data.object;
+      const priceId = subscription.items.data[0].price.id;
+      if (!TIER_BY_PRICE_ID[priceId]) {
+        return { statusCode: 200, body: `Price ${priceId} isn't one of ours, ignoring.` };
+      }
       // Never delete the user's charts or data on cancellation -- just drop
       // access. Removes the "I lost everything" support problem entirely.
       await patchByStripeCustomerId(subscription.customer, { status: 'cancelled' });
