@@ -237,7 +237,35 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    position: relative;
   }
+
+  .tier-card-current {
+    border-color: var(--brass);
+    box-shadow: 0 0 0 1px var(--brass);
+  }
+
+  .tier-current-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--shell-bg);
+    background: var(--brass);
+    padding: 3px 10px;
+    border-radius: 4px;
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .tier-current-btn {
+    cursor: default;
+    opacity: 0.7;
+  }
+  .tier-current-btn:hover { filter: none; }
 
   .tier-name {
     font-family: 'Architects Daughter', cursive;
@@ -2156,6 +2184,22 @@ async function signOutOfApp() {
 
 function renderPaywallView() {
   setActiveTab('plans');
+
+  const isActive = currentSubscription && currentSubscription.status === 'active';
+  const tierCard = (tierKey, name, price, limit) => {
+    const isCurrent = isActive && currentSubscription.tier === tierKey;
+    return `
+      <div class="tier-card${isCurrent ? ' tier-card-current' : ''}">
+        ${isCurrent ? '<div class="tier-current-badge">Your Current Plan</div>' : ''}
+        <div class="tier-name">${name}</div>
+        <div class="tier-price">${price}<span>/mo</span></div>
+        <div class="tier-limit">${limit} charts / month</div>
+        ${isCurrent
+          ? `<div class="shell-btn secondary tier-subscribe-btn tier-current-btn">Current Plan</div>`
+          : `<a class="shell-btn tier-subscribe-btn" href="${subscribeUrl(tierKey)}" target="_blank" rel="noopener">Subscribe</a>`}
+      </div>`;
+  };
+
   viewContainer.innerHTML = `
     <div class="view">
       <div class="view-header">
@@ -2165,24 +2209,9 @@ function renderPaywallView() {
         </div>
       </div>
       <div class="tier-grid">
-        <div class="tier-card">
-          <div class="tier-name">Starter</div>
-          <div class="tier-price">$12<span>/mo</span></div>
-          <div class="tier-limit">10 charts / month</div>
-          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('starter')}" target="_blank" rel="noopener">Subscribe</a>
-        </div>
-        <div class="tier-card">
-          <div class="tier-name">Pro</div>
-          <div class="tier-price">$29<span>/mo</span></div>
-          <div class="tier-limit">30 charts / month</div>
-          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('pro')}" target="_blank" rel="noopener">Subscribe</a>
-        </div>
-        <div class="tier-card">
-          <div class="tier-name">Unlimited</div>
-          <div class="tier-price">$79<span>/mo</span></div>
-          <div class="tier-limit">100 charts / month</div>
-          <a class="shell-btn tier-subscribe-btn" href="${subscribeUrl('unlimited')}" target="_blank" rel="noopener">Subscribe</a>
-        </div>
+        ${tierCard('starter', 'Starter', '$12', 10)}
+        ${tierCard('pro', 'Pro', '$29', 30)}
+        ${tierCard('unlimited', 'Unlimited', '$79', 100)}
       </div>
       <div class="paywall-footer">
         <button class="shell-btn secondary" id="paywallRefreshBtn">I just subscribed -- check again</button>
