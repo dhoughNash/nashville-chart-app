@@ -1264,6 +1264,21 @@
       text-shadow: 0.4px 0 0 currentColor, -0.4px 0 0 currentColor,
                    0 0.4px 0 currentColor, 0 -0.4px 0 currentColor;
     }
+
+    /* Print has real spare vertical room on most charts (the grid columns
+       are equal-width regardless of content, so a lone digit already sits
+       in a column much wider than itself -- shrinking the gap doesn't
+       reclaim that, it just redistributes where the leftover space sits).
+       The lever that actually works is making the numbers themselves
+       bigger, since there's genuine room to grow into on the page. */
+    .bar-single { font-size: 34px; }
+    .section-label { font-size: 20px; }
+    .title-text { font-size: 32px; }
+    .kt-chip .kt-value, .kt-select { font-size: 19px; }
+    .bar-diamond { width: 36px; height: 36px; }
+    .bar-diamond span { font-size: 17px; }
+    .bar-box { width: 30px; height: 46px; }
+    .bar-box span { font-size: 17px; }
   }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
