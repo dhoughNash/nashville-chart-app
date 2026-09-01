@@ -1027,6 +1027,11 @@
     pointer-events: none;
   }
 
+  .mark-maj7 {
+    font-size: 10px;
+    right: -13px;
+  }
+
   .mark-stop {
     position: absolute;
     top: 50%;
@@ -1092,6 +1097,14 @@
       bottom: 16px;
       transform: translateX(-50%);
       flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: calc(100vw - 32px);
+    }
+    .tool-btn {
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
     }
   }
 
@@ -1126,6 +1139,27 @@
     .section-row { flex-direction: column; align-items: flex-start; gap: 8px; }
     .section-label-col { width: auto; }
     .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .nav-tabs { flex-wrap: wrap; }
+    .nav-right { flex-wrap: wrap; row-gap: 8px; }
+
+    /* The chart toolbar can carry up to 6 buttons (Show Chords, Fix Tonic,
+       Print, Edit, Save, Library) -- on a narrow screen these need to wrap
+       onto their own line instead of forcing the row wider than the
+       screen and pushing buttons off the right edge. */
+    .chart-view-toolbar {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .toolbar-actions {
+      flex-wrap: wrap;
+      width: 100%;
+    }
+    .toolbar-actions .shell-btn {
+      flex: 1 1 auto;
+      font-size: 11px;
+      padding: 8px 10px;
+    }
 
     /* Everything below is sized down specifically for narrow screens --
        desktop rules above are untouched. */
@@ -1213,6 +1247,22 @@
     /* editing affordances (dashed hover lines) are meaningless on paper */
     [contenteditable="true"] {
       border-bottom: none !important;
+    }
+
+    /* -webkit-text-stroke (our on-screen faux-bold trick) is unreliable in
+       print -- some print engines just drop it since it's treated as a
+       decorative screen-only effect, leaving text at its true, thin base
+       weight on paper. font-weight is honored far more reliably by print
+       rendering even without a true bold font face (browsers synthesize
+       one), and the layered text-shadow adds further reinforcement on top. */
+    .sheet {
+      font-weight: 700;
+    }
+    .bar-single, .section-label, .title-text, .kt-value, .kt-select,
+    .bar-diamond span, .bar-box span, .split-top, .split-bottom,
+    .mark-push, .mark-beatcount, .mark-seventh {
+      text-shadow: 0.4px 0 0 currentColor, -0.4px 0 0 currentColor,
+                   0 0.4px 0 currentColor, 0 -0.4px 0 currentColor;
     }
   }
 </style>
@@ -2562,6 +2612,12 @@ function wrapWithMarks(path, innerHtml) {
   if (marks.includes('seventh')) {
     decorHtml += `<span class="mark-seventh">7</span>`;
   }
+  if (marks.includes('sus')) {
+    decorHtml += `<span class="mark-seventh">S</span>`;
+  }
+  if (marks.includes('maj7')) {
+    decorHtml += `<span class="mark-seventh mark-maj7">M7</span>`;
+  }
   return `<span class="marked-chord">${decorHtml}${innerHtml}</span>`;
 }
 
@@ -2964,6 +3020,8 @@ function renderChartView(data) {
           <button class="tool-btn${activeMarkTool === 'two' ? ' active' : ''}" data-tool="two" title="Label as 2 beats">2</button>
           <button class="tool-btn${activeMarkTool === 'six' ? ' active' : ''}" data-tool="six" title="Label as 6 beats">6</button>
           <button class="tool-btn${activeMarkTool === 'seventh' ? ' active' : ''}" data-tool="seventh" title="7th chord">7</button>
+          <button class="tool-btn${activeMarkTool === 'sus' ? ' active' : ''}" data-tool="sus" title="Suspended chord">S</button>
+          <button class="tool-btn${activeMarkTool === 'maj7' ? ' active' : ''}" data-tool="maj7" title="Major 7th chord" style="font-size:14px">M7</button>
           <button class="tool-btn${activeMarkTool === 'tie' ? ' active' : ''}" data-tool="tie" title="Tie">⌢</button>
         </div>
       ` : ''}
