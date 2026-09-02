@@ -3253,22 +3253,25 @@ function updateUserStatusUI() {
 // current session state already is, so this single listener handles both
 // the initial page-load check and any later sign-in/sign-out.
 sb.auth.onAuthStateChange((event, session) => {
-  currentUser = session ? session.user : null;
+  const newUser = session ? session.user : null;
+  // Supabase deliberately re-fires this with event type 'SIGNED_IN' on
+  // things like refocusing a tab or a background token refresh -- NOT just
+  // on a genuine fresh login. Their own docs say not to assume anything
+  // from the event name itself. So instead of trusting the event type,
+  // check whether this is actually a DIFFERENT person than who was already
+  // signed in. Same person re-confirmed -> do nothing, leave whatever
+  // they're doing (e.g. mid-chart-processing) completely undisturbed.
+  // Genuinely new person -> navigate, same as before.
+  const isGenuineNewSignIn = newUser && (!currentUser || currentUser.id !== newUser.id);
+  currentUser = newUser;
   updateUserStatusUI();
   if (!currentUser) {
     renderLoginView();
     return;
   }
   updateAuthUI();
-  // Supabase fires this same callback periodically in the background just
-  // to refresh the session token -- that's routine and should NOT yank the
-  // person back to the Library and discard whatever they're looking at
-  // (e.g. a freshly generated, not-yet-saved chart). Only actually
-  // navigate on a real sign-in or the initial load check.
-  if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+  if (isGenuineNewSignIn) {
     attemptSilentSignIn();
-    // Seed/refresh the subscription row, then refresh the nav display so
-    // the tier label next to the email actually shows up once it's loaded.
     loadSubscriptionStatus().then(() => updateUserStatusUI());
     renderLibraryView();
   }
