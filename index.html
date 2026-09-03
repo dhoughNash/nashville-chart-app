@@ -1225,6 +1225,17 @@
       background-image: none;
     }
 
+    /* Browsers suppress background-color fills by default when printing,
+       to save ink -- everything else in the chart survives print because
+       it's drawn with actual text or SVG strokes, but the mid-line dots
+       are rendered purely as a background fill, so they were the one
+       thing silently getting dropped. This forces backgrounds to print
+       exactly as shown, overriding that default. */
+    .group-dot {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
     .topnav, .save-toast, .no-print, .add-section-row, .bar-split-btn, .bar-delete-btn, .bar-add-btn, .section-controls {
       display: none !important;
     }
@@ -1242,6 +1253,7 @@
       box-shadow: none;
       border: none;
       padding: 0;
+      background: #fff; /* true white on paper -- the tan/cream is an on-screen-only look */
     }
 
     /* editing affordances (dashed hover lines) are meaningless on paper */
