@@ -3063,8 +3063,14 @@ function renderBar(bar, path, inGroup) {
   }
   if (bar.diamond) {
     const innerContent = renderDiamondOrBoxContent(bar.diamond, [...path, 'diamond'], locked);
+    // A diamond inside a group has to share the group's already-tight
+    // width budget with a sibling chord -- at full size, two of these can
+    // visually overlap, which makes clicking precisely on the right one
+    // unreliable (you can end up hitting the wrong chord's shape
+    // entirely). Reuse the same reduced sizing already built for nested
+    // diamond/box combinations.
     const inner = `
-      <span class="bar-diamond">
+      <span class="bar-diamond${inGroup ? ' bar-shape-nested' : ''}">
         <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
         ${innerContent}
       </span>`;
@@ -3073,7 +3079,7 @@ function renderBar(bar, path, inGroup) {
   if (bar.box) {
     const innerContent = renderDiamondOrBoxContent(bar.box, [...path, 'box'], locked);
     const inner = `
-      <span class="bar-box">
+      <span class="bar-box${inGroup ? ' bar-shape-nested' : ''}">
         <svg viewBox="0 0 26 40" preserveAspectRatio="none"><rect x="2" y="2" width="22" height="36" rx="2" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
         ${innerContent}
       </span>`;
