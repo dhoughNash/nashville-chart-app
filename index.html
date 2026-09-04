@@ -2743,6 +2743,24 @@ function setValueAtBarPath(path, value) {
 }
 
 function toggleDiamond(path) {
+  // If the click resolved to a path ending in 'diamond', that's pointing at
+  // the TEXT inside an existing diamond (the same path editable() uses for
+  // contenteditable), not the diamond wrapper itself. Strip it so we
+  // toggle the actual wrapper -- otherwise clicking an existing diamond's
+  // own number just wraps ANOTHER diamond around it instead of removing
+  // the one that's there, and repeated clicks stack up with no way back.
+  if (path[path.length - 1] === 'diamond') {
+    path = path.slice(0, -1);
+  }
+  if (path[path.length - 2] === 'split') {
+    // A specific half of a diagonal slash chord -- that box is only
+    // 20-26px, far too small for a nested diamond to render sensibly.
+    // This used to slip through silently and corrupt the chord's data
+    // (the renderer only ever expected a plain string there), which is
+    // why removing the split bar looked like the only way to fix it.
+    showToast("Sustain can't apply to one half of a slash chord -- there's no room for it there.");
+    return;
+  }
   const val = getValueAtBarPath(path);
   if (typeof val === 'string') {
     setValueAtBarPath(path, { diamond: val });
@@ -2767,6 +2785,16 @@ function toggleBox(path) {
   // A tall rectangle around a chord -- marks a bar as an alternative to the
   // standard 4-beat measure (e.g. a bar of 6, or 2 extra beats). Combine
   // with the "2" or "6" overlay marks to label exactly which.
+  // Same reasoning as toggleDiamond above: strip a trailing 'box' segment,
+  // since that points at the text inside an existing box, not the box
+  // wrapper itself.
+  if (path[path.length - 1] === 'box') {
+    path = path.slice(0, -1);
+  }
+  if (path[path.length - 2] === 'split') {
+    showToast("Extended bar can't apply to one half of a slash chord -- there's no room for it there.");
+    return;
+  }
   const val = getValueAtBarPath(path);
   if (typeof val === 'string') {
     setValueAtBarPath(path, { box: val });
