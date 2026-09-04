@@ -965,6 +965,27 @@
   .bar-box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .bar-box span { font-family: 'Architects Daughter', cursive; font-size: 15px; color: var(--ink); -webkit-text-stroke: 0.6px var(--ink); position: relative; }
 
+  /* A diamond or box nested inside the other shape needs to be
+     noticeably smaller so both outlines read clearly rather than one
+     overflowing the other. */
+  .bar-shape-nested {
+    position: relative;
+  }
+  .bar-diamond.bar-shape-nested {
+    width: 21px;
+    height: 21px;
+  }
+  .bar-diamond.bar-shape-nested span {
+    font-size: 10px;
+  }
+  .bar-box.bar-shape-nested {
+    width: 16px;
+    height: 25px;
+  }
+  .bar-box.bar-shape-nested span {
+    font-size: 10px;
+  }
+
   .group-dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--ink); align-self: center; justify-self: center;
@@ -2677,12 +2698,23 @@ function wrapWithMarks(path, innerHtml) {
 }
 
 function getValueAtBarPath(path) {
-  // path like ['bar', secIdx, barIdx] (whole bar) or
-  // ['bar', secIdx, barIdx, 'group', subIdx] (one chord inside a group)
+  // path like ['bar', secIdx, barIdx] (whole bar), or with extra segments:
+  // ['group', subIdx] / ['split', subIdx] are PAIRED (an index follows the
+  // key), but ['diamond'] / ['box'] are SINGLE (direct property, no index)
+  // -- has to branch on which kind each segment is, not assume every
+  // segment comes in a pair.
   let node = currentData.sections[path[1]].bars[path[2]];
   const rest = path.slice(3);
-  for (let i = 0; i < rest.length; i += 2) {
-    node = node[rest[i]][rest[i + 1]];
+  let i = 0;
+  while (i < rest.length) {
+    const key = rest[i];
+    if (key === 'group' || key === 'split') {
+      node = node[key][rest[i + 1]];
+      i += 2;
+    } else {
+      node = node[key];
+      i += 1;
+    }
   }
   return node;
 }
@@ -2694,10 +2726,20 @@ function setValueAtBarPath(path, value) {
     return;
   }
   let node = currentData.sections[path[1]].bars[path[2]];
-  for (let i = 0; i < rest.length - 2; i += 2) {
-    node = node[rest[i]][rest[i + 1]];
+  let i = 0;
+  while (i < rest.length) {
+    const key = rest[i];
+    const isPaired = key === 'group' || key === 'split';
+    const stepSize = isPaired ? 2 : 1;
+    const isLastStep = i + stepSize >= rest.length;
+    if (isLastStep) {
+      if (isPaired) node[key][rest[i + 1]] = value;
+      else node[key] = value;
+      return;
+    }
+    node = isPaired ? node[key][rest[i + 1]] : node[key];
+    i += stepSize;
   }
-  node[rest[rest.length - 2]][rest[rest.length - 1]] = value;
 }
 
 function toggleDiamond(path) {
@@ -2706,6 +2748,14 @@ function toggleDiamond(path) {
     setValueAtBarPath(path, { diamond: val });
   } else if (val && val.diamond) {
     setValueAtBarPath(path, val.diamond);
+  } else if (val && typeof val.box === 'string') {
+    // Nest a diamond inside the existing box (rectangle) rather than
+    // rejecting -- the two mark different, compatible things (beat count
+    // vs. sustain), so there's no real reason they can't combine.
+    setValueAtBarPath(path, { box: { diamond: val.box } });
+  } else if (val && val.box && val.box.diamond) {
+    // Already nested -- remove just the diamond, keep the box.
+    setValueAtBarPath(path, { box: val.box.diamond });
   } else {
     showToast('Sustain only applies to a single chord, not a split or a whole group.');
     return;
@@ -2722,6 +2772,11 @@ function toggleBox(path) {
     setValueAtBarPath(path, { box: val });
   } else if (val && val.box) {
     setValueAtBarPath(path, val.box);
+  } else if (val && typeof val.diamond === 'string') {
+    // Nest a box inside the existing diamond, same reasoning as above.
+    setValueAtBarPath(path, { diamond: { box: val.diamond } });
+  } else if (val && val.diamond && val.diamond.box) {
+    setValueAtBarPath(path, { diamond: val.diamond.box });
   } else {
     showToast('Extended bar only applies to a single chord, not a split or a whole group.');
     return;
@@ -2927,6 +2982,32 @@ function wavyHeaderSVG() {
     </svg>`;
 }
 
+// Renders whatever sits inside a diamond or box: either a plain chord
+// numeral, or -- now that the two can nest -- the OTHER shape wrapped
+// around that same numeral (a box inside a diamond, or vice versa).
+function renderDiamondOrBoxContent(value, path, locked) {
+  if (typeof value === 'string') {
+    return `<span ${editable(path, displayValueFor(value), locked)}</span>`;
+  }
+  if (value && value.diamond) {
+    const nested = renderDiamondOrBoxContent(value.diamond, [...path, 'diamond'], locked);
+    return `
+      <span class="bar-diamond bar-shape-nested">
+        <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
+        ${nested}
+      </span>`;
+  }
+  if (value && value.box) {
+    const nested = renderDiamondOrBoxContent(value.box, [...path, 'box'], locked);
+    return `
+      <span class="bar-box bar-shape-nested">
+        <svg viewBox="0 0 26 40" preserveAspectRatio="none"><rect x="2" y="2" width="22" height="36" rx="2" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
+        ${nested}
+      </span>`;
+  }
+  return '';
+}
+
 function renderBar(bar, path, inGroup) {
   const locked = displayMode === 'chords' || !editMode;
   if (typeof bar === 'string') {
@@ -2953,18 +3034,20 @@ function renderBar(bar, path, inGroup) {
       </span>`;
   }
   if (bar.diamond) {
+    const innerContent = renderDiamondOrBoxContent(bar.diamond, [...path, 'diamond'], locked);
     const inner = `
       <span class="bar-diamond">
         <svg viewBox="0 0 46 46"><polygon points="23,3 43,23 23,43 3,23" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
-        <span ${editable([...path, 'diamond'], displayValueFor(bar.diamond), locked)}</span>
+        ${innerContent}
       </span>`;
     return wrapWithMarks([...path, 'diamond'], inner);
   }
   if (bar.box) {
+    const innerContent = renderDiamondOrBoxContent(bar.box, [...path, 'box'], locked);
     const inner = `
       <span class="bar-box">
         <svg viewBox="0 0 26 40" preserveAspectRatio="none"><rect x="2" y="2" width="22" height="36" rx="2" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>
-        <span ${editable([...path, 'box'], displayValueFor(bar.box), locked)}</span>
+        ${innerContent}
       </span>`;
     return wrapWithMarks([...path, 'box'], inner);
   }
