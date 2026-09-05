@@ -2649,6 +2649,27 @@ function getMarksForPath(path) {
 }
 
 function toggleMark(path, markType) {
+  // Reject marks on a slash chord entirely -- whether the click landed
+  // precisely on one of its two tiny numerals (no clean room for an
+  // overlay there) or anywhere else in the box, including the diagonal
+  // line itself (which falls back to targeting the whole bar, and every
+  // bar gets wrapped with mark-rendering regardless of type -- so it was
+  // rendering centered right where the line sits, looking like it was
+  // attached to the line specifically).
+  if (path[path.length - 2] === 'split') {
+    showToast("Marks don't fit on one half of a slash chord -- there's no room for them there.");
+    return;
+  }
+  const baseVal = getValueAtBarPath(path.slice(0, 3));
+  // Careful here: every JS string has a built-in .split() METHOD, so a
+  // plain chord like "5" would make `baseVal.split` truthy too -- has to
+  // confirm baseVal is actually our object shape (an array under .split),
+  // not just any string, or every plain bar gets wrongly rejected.
+  if (baseVal && typeof baseVal === 'object' && Array.isArray(baseVal.split)) {
+    showToast("Marks can't apply to a slash chord as a whole -- there's no single clear spot for them to sit.");
+    return;
+  }
+
   if (!currentData.marks) currentData.marks = {};
   const key = getMarkPathKey(path);
   const existing = currentData.marks[key] || [];
