@@ -2703,7 +2703,7 @@ function wrapWithMarks(path, innerHtml) {
   if (!marks.length) return innerHtml;
   let decorHtml = '';
   if (marks.includes('stop')) {
-    decorHtml += `<svg class="mark-stop" viewBox="0 0 40 40"><polygon points="20,4 36,33 4,33" fill="none" stroke="var(--red)" stroke-width="1.6"/></svg>`;
+    decorHtml += `<svg class="mark-stop" viewBox="0 0 40 40"><polygon points="20,4 36,33 4,33" fill="none" stroke="var(--ink)" stroke-width="1.6"/></svg>`;
   }
   if (marks.includes('push')) {
     decorHtml += `<span class="mark-push">&lt;</span>`;
