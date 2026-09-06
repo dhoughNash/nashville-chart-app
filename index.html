@@ -2669,6 +2669,16 @@ function toggleMark(path, markType) {
     showToast("Marks can't apply to a slash chord as a whole -- there's no single clear spot for them to sit.");
     return;
   }
+  // Same idea for an underlined group (two chords sharing a bar): a click
+  // that lands on the underline or the gap between the two chords -- not
+  // precisely on either one -- falls back to targeting the whole pair,
+  // which renders centered right between them. A click on a SPECIFIC
+  // chord within the group (path.length > 3) is unaffected and still
+  // works exactly as before.
+  if (baseVal && typeof baseVal === 'object' && Array.isArray(baseVal.group) && path.length === 3) {
+    showToast('Click directly on one of the two chords, not the space between them.');
+    return;
+  }
 
   if (!currentData.marks) currentData.marks = {};
   const key = getMarkPathKey(path);
