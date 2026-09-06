@@ -1436,6 +1436,30 @@ const saveToast = document.getElementById('saveToast');
 let currentData = null;      // chart currently open in the chart view
 let currentChartId = null;   // storage id of the currently open chart, if it's a saved one
 
+// ---------- edit-mode undo ----------
+// Snapshot-based undo: each mutating edit action pushes a deep copy of
+// currentData onto this stack BEFORE the mutation happens. Undo pops the
+// most recent snapshot and re-renders from it. Capped so a very long
+// editing session can't grow this unbounded.
+let undoStack = [];
+const UNDO_STACK_LIMIT = 50;
+
+function snapshotForUndo() {
+  if (!currentData) return;
+  undoStack.push(JSON.stringify(currentData));
+  if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
+}
+
+function performUndo() {
+  if (!undoStack.length) {
+    showToast('Nothing to undo');
+    return;
+  }
+  currentData = JSON.parse(undoStack.pop());
+  renderChartView(currentData);
+  showToast('Undid last change');
+}
+
 // Workflow slugs are fixed for this account -- no need to expose them as
 // editable fields in the UI.
 const CHORDS_WORKFLOW_SLUG = 'untitled-workflow-40fd1d9';
@@ -1891,6 +1915,7 @@ function fixTonic(wrongNumeral, correctNumeral) {
     return false;
   }
 
+  snapshotForUndo();
   currentData.sections.forEach(section => {
     section.bars = section.bars.map(bar => transposeBarValue(bar, shift));
   });
@@ -2684,6 +2709,7 @@ function toggleMark(path, markType) {
     return;
   }
 
+  snapshotForUndo();
   if (!currentData.marks) currentData.marks = {};
   const key = getMarkPathKey(path);
   const existing = currentData.marks[key] || [];
@@ -2799,6 +2825,7 @@ function toggleDiamond(path) {
     showToast("Sustain can't apply to one half of a slash chord -- there's no room for it there.");
     return;
   }
+  snapshotForUndo();
   const val = getValueAtBarPath(path);
   if (typeof val === 'string') {
     setValueAtBarPath(path, { diamond: val });
@@ -2833,6 +2860,7 @@ function toggleBox(path) {
     showToast("Extended bar can't apply to one half of a slash chord -- there's no room for it there.");
     return;
   }
+  snapshotForUndo();
   const val = getValueAtBarPath(path);
   if (typeof val === 'string') {
     setValueAtBarPath(path, { box: val });
@@ -2855,6 +2883,7 @@ function toggleSplitBar(path) {
   // one bar) -- NOT {split: [a,b]} (the diagonal slash-chord notation for a
   // chord with an altered bass note). Same distinction we established for
   // the automated pipeline; this tool must match it.
+  snapshotForUndo();
   const val = getValueAtBarPath(path);
   if (typeof val === 'string') {
     // starts as the same chord on both sides -- edit the second half by hand
@@ -2882,6 +2911,7 @@ function toggleTie(secIdx, barIdx) {
     showToast("Can't tie the last bar in a section to anything.");
     return;
   }
+  snapshotForUndo();
   if (!currentData.ties) currentData.ties = {};
   const key = getTieKey(secIdx, barIdx);
   if (currentData.ties[key]) {
@@ -2901,6 +2931,7 @@ function getHairpin(secIdx, barIdx) {
 }
 
 function toggleHairpin(secIdx, barIdx, type) {
+  snapshotForUndo();
   if (!currentData.hairpins) currentData.hairpins = {};
   const key = getTieKey(secIdx, barIdx);
   if (currentData.hairpins[key] === type) {
@@ -2914,6 +2945,7 @@ function toggleHairpin(secIdx, barIdx, type) {
 function splitSectionAtBar(secIdx, barIdx) {
   const section = currentData.sections[secIdx];
   if (barIdx <= 0 || barIdx >= section.bars.length) return; // nothing meaningful to split
+  snapshotForUndo();
   const firstPart = section.bars.slice(0, barIdx);
   const secondPart = section.bars.slice(barIdx);
   currentData.sections.splice(secIdx, 1,
@@ -2925,6 +2957,7 @@ function splitSectionAtBar(secIdx, barIdx) {
 
 function mergeSectionUp(secIdx) {
   if (secIdx <= 0) return;
+  snapshotForUndo();
   const prev = currentData.sections[secIdx - 1];
   const current = currentData.sections[secIdx];
   prev.bars = prev.bars.concat(current.bars);
@@ -2933,6 +2966,7 @@ function mergeSectionUp(secIdx) {
 }
 
 function addBarToSection(secIdx) {
+  snapshotForUndo();
   currentData.sections[secIdx].bars.push('1');
   renderChartView(currentData);
 }
@@ -2942,6 +2976,7 @@ function insertBarAfter(secIdx, barIdx) {
   // nothing is removed, but everything after the insertion point needs to
   // shift up by one so existing ties/marks keep pointing at the same
   // actual chord they did before.
+  snapshotForUndo();
   const section = currentData.sections[secIdx];
   section.bars.splice(barIdx + 1, 0, '1');
 
@@ -2975,6 +3010,7 @@ function deleteBar(secIdx, barIdx) {
   // Also clean up any tie or marks anchored to this specific bar (and shift
   // ties on later bars down by one index) so deleting a bar doesn't leave
   // orphaned marks pointing at a now-different bar.
+  snapshotForUndo();
   const section = currentData.sections[secIdx];
   section.bars.splice(barIdx, 1);
 
@@ -3007,6 +3043,7 @@ function deleteBar(secIdx, barIdx) {
 }
 
 function addNewSection() {
+  snapshotForUndo();
   currentData.sections.push({ label: 'New', bars: ['1'] });
   renderChartView(currentData);
 }
@@ -3222,6 +3259,7 @@ function renderChartView(data) {
         <span class="edit-hint">${hintText}</span>
         <div class="toolbar-actions">
           <button class="shell-btn secondary" id="modeToggleBtn">${displayMode === 'numbers' ? 'Show Chords' : 'Show Numbers'}</button>
+          ${editMode ? `<button class="shell-btn secondary" id="undoBtn" title="Undo last edit (Ctrl/Cmd+Z)">↶ Undo</button>` : ''}
           ${editMode ? `<button class="shell-btn secondary" id="fixTonicBtn">Fix Tonic</button>` : ''}
           <button class="shell-btn secondary" id="printBtn">Print / Save PDF</button>
           <button class="shell-btn secondary" id="backBtn">← Library</button>
@@ -3287,6 +3325,11 @@ function renderChartView(data) {
     renderChartView(currentData);
   });
 
+  const undoBtn = document.getElementById('undoBtn');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => performUndo());
+  }
+
   const fixTonicBtn = document.getElementById('fixTonicBtn');
   if (fixTonicBtn) {
     const overlay = document.getElementById('fixTonicOverlay');
@@ -3346,6 +3389,7 @@ function renderChartView(data) {
   `;
 
   document.getElementById('keySelect').addEventListener('change', (e) => {
+    snapshotForUndo();
     currentData.key = e.target.value;
     renderChartView(currentData);
   });
@@ -3429,11 +3473,20 @@ function renderChartView(data) {
     }
   });
 
+  sheet.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (!el.hasAttribute || !el.hasAttribute('data-path')) return;
+    el.dataset.beforeEdit = el.textContent;
+  });
+
   sheet.addEventListener('focusout', (e) => {
     const el = e.target;
     if (!el.hasAttribute || !el.hasAttribute('data-path') || !currentData) return;
     const path = JSON.parse(el.getAttribute('data-path'));
-    setAtPath(currentData, path, el.textContent.trim());
+    const newValue = el.textContent.trim();
+    if (el.dataset.beforeEdit !== undefined && el.dataset.beforeEdit === newValue) return; // no actual change, don't clutter undo history
+    snapshotForUndo();
+    setAtPath(currentData, path, newValue);
   });
 }
 
@@ -3462,6 +3515,19 @@ window.addEventListener('beforeprint', () => {
 window.addEventListener('afterprint', () => {
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.style.zoom = '';
+});
+
+// Ctrl+Z (Windows/Linux) or Cmd+Z (Mac) triggers undo, but only while
+// actively editing a chart -- and never while focus is inside a
+// contenteditable field, where Z is meant to trigger the browser's own
+// native text-undo instead of ours.
+document.addEventListener('keydown', (e) => {
+  const isUndoCombo = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
+  if (!isUndoCombo) return;
+  if (!editMode || !currentData) return;
+  if (document.activeElement && document.activeElement.isContentEditable) return;
+  e.preventDefault();
+  performUndo();
 });
 
 // ---------- boot ----------
