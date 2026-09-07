@@ -1582,7 +1582,14 @@ function buildBarsFromMusicAiData(chordsData, keyTonic, keyMode) {
 
 function musicaiBarToShorthand(barEntries) {
   if (barEntries.length === 1) return barEntries[0].numeral;
-  return { group: [barEntries[0].numeral, barEntries[barEntries.length - 1].numeral] };
+  const first = barEntries[0].numeral;
+  const last = barEntries[barEntries.length - 1].numeral;
+  // Multiple attacks were detected in this bar, but if the chord didn't
+  // actually change (a re-articulated strum, a bass re-attack, a brief
+  // confidence dip that re-triggered the same label) it's really just one
+  // chord for the whole bar -- don't manufacture an unnecessary split.
+  if (first === last) return first;
+  return { group: [first, last] };
 }
 
 function musicaiGetDownbeats(beats) {
