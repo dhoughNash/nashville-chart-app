@@ -358,6 +358,37 @@
 
   /* --- library --- */
 
+  .library-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sort-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  select.shell-select {
+    background: transparent;
+    color: var(--shell-text-dim);
+    border: 1px solid #4A4530;
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-family: 'Public Sans', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+
+  button.shell-btn.sort-dir-btn {
+    padding: 8px 11px;
+    font-size: 14px;
+    line-height: 1;
+  }
+
   .chart-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1436,6 +1467,28 @@ const saveToast = document.getElementById('saveToast');
 let currentData = null;      // chart currently open in the chart view
 let currentChartId = null;   // storage id of the currently open chart, if it's a saved one
 
+// ---------- library sort ----------
+// Persists across re-renders of the library view (e.g. after a delete)
+// so the person's chosen sort doesn't reset itself.
+let librarySortField = 'date'; // 'date' | 'title' | 'name'
+let librarySortDir = 'desc';   // 'asc' | 'desc'
+
+function sortChartsIndex(index) {
+  const sorted = [...index];
+  sorted.sort((a, b) => {
+    let result;
+    if (librarySortField === 'date') {
+      result = (a.updatedAt || 0) - (b.updatedAt || 0);
+    } else {
+      const fieldA = (a[librarySortField] || '').toLowerCase();
+      const fieldB = (b[librarySortField] || '').toLowerCase();
+      result = fieldA.localeCompare(fieldB);
+    }
+    return librarySortDir === 'asc' ? result : -result;
+  });
+  return sorted;
+}
+
 // ---------- edit-mode undo ----------
 // Snapshot-based undo: each mutating edit action pushes a deep copy of
 // currentData onto this stack BEFORE the mutation happens. Undo pops the
@@ -2405,14 +2458,32 @@ async function renderLibraryView() {
           <h1>Your Charts</h1>
           <p>${driveSignedIn ? 'Synced to your Google Drive.' : 'Saved on this device, in this browser.'}</p>
         </div>
-        <button class="shell-btn" id="newChartBtn">+ New Chart</button>
+        <div class="library-actions">
+          <div class="sort-controls">
+            <select class="shell-select" id="librarySortField">
+              <option value="date" ${librarySortField === 'date' ? 'selected' : ''}>Date Added</option>
+              <option value="title" ${librarySortField === 'title' ? 'selected' : ''}>Title</option>
+              <option value="name" ${librarySortField === 'name' ? 'selected' : ''}>Writer/Artist</option>
+            </select>
+            <button class="shell-btn secondary sort-dir-btn" id="librarySortDirBtn" title="${librarySortDir === 'asc' ? 'Ascending' : 'Descending'} -- click to flip">${librarySortDir === 'asc' ? '↑' : '↓'}</button>
+          </div>
+          <button class="shell-btn" id="newChartBtn">+ New Chart</button>
+        </div>
       </div>
       <div id="libraryContent"></div>
     </div>
   `;
   document.getElementById('newChartBtn').addEventListener('click', () => renderUploadView());
+  document.getElementById('librarySortField').addEventListener('change', (e) => {
+    librarySortField = e.target.value;
+    renderLibraryView();
+  });
+  document.getElementById('librarySortDirBtn').addEventListener('click', () => {
+    librarySortDir = librarySortDir === 'asc' ? 'desc' : 'asc';
+    renderLibraryView();
+  });
 
-  const index = await getChartsIndex();
+  const index = sortChartsIndex(await getChartsIndex());
   const content = document.getElementById('libraryContent');
 
   if (!index.length) {
