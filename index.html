@@ -3148,11 +3148,12 @@ function setAtPath(data, path, value) {
   }
 }
 
-function editable(path, value, locked) {
+function editable(path, value, locked, isPlaceholder) {
   if (locked) {
     return `>${value}`;
   }
-  return `contenteditable="true" data-path='${JSON.stringify(path)}'>${value}`;
+  const placeholderAttr = isPlaceholder ? ` data-placeholder="true"` : '';
+  return `contenteditable="true" data-path='${JSON.stringify(path)}'${placeholderAttr}>${value}`;
 }
 
 function wavyHeaderSVG() {
@@ -3450,7 +3451,7 @@ function renderChartView(data) {
   const selectedKey = normalizeKey(data.key);
   sheet.innerHTML = `
     <div class="sheet-header">
-      <div class="title-text" ${editable(['meta', 'title'], data.title || 'TITLE', !editMode)}</div>
+      <div class="title-text" ${editable(['meta', 'title'], data.title || 'TITLE', !editMode, !data.title)}</div>
       ${wavyHeaderSVG()}
       <div class="key-tempo-block">
         <div class="kt-chip">
@@ -3459,8 +3460,8 @@ function renderChartView(data) {
             ${CHROMATIC.map(k => `<option value="${k}" ${k === selectedKey ? 'selected' : ''}>${k}</option>`).join('')}
           </select>
         </div>
-        <div class="kt-chip"><span class="kt-label">Tempo</span><span class="kt-value" ${editable(['meta', 'tempo'], data.tempo || '—', !editMode)}</span></div>
-        <div class="kt-chip"><span class="kt-label">Writer/Artist</span><span class="kt-value" ${editable(['meta', 'name'], data.name || '—', !editMode)}</span></div>
+        <div class="kt-chip"><span class="kt-label">Tempo</span><span class="kt-value" ${editable(['meta', 'tempo'], data.tempo || '—', !editMode, !data.tempo)}</span></div>
+        <div class="kt-chip"><span class="kt-label">Writer/Artist</span><span class="kt-value" ${editable(['meta', 'name'], data.name || '—', !editMode, !data.name)}</span></div>
       </div>
     </div>
     ${sectionsHtml || '<div class="empty-state">No sections in this chart yet.</div>'}
@@ -3555,7 +3556,15 @@ function renderChartView(data) {
   sheet.addEventListener('focusin', (e) => {
     const el = e.target;
     if (!el.hasAttribute || !el.hasAttribute('data-path')) return;
-    el.dataset.beforeEdit = el.textContent;
+    if (el.dataset.placeholder === 'true') {
+      // This is showing placeholder text ("TITLE", "—"), not a real value --
+      // clear it immediately so typing starts from a blank field instead of
+      // requiring the person to manually delete the placeholder first.
+      el.textContent = '';
+      el.dataset.beforeEdit = '';
+    } else {
+      el.dataset.beforeEdit = el.textContent;
+    }
   });
 
   sheet.addEventListener('focusout', (e) => {
@@ -3563,7 +3572,14 @@ function renderChartView(data) {
     if (!el.hasAttribute || !el.hasAttribute('data-path') || !currentData) return;
     const path = JSON.parse(el.getAttribute('data-path'));
     const newValue = el.textContent.trim();
-    if (el.dataset.beforeEdit !== undefined && el.dataset.beforeEdit === newValue) return; // no actual change, don't clutter undo history
+    if (el.dataset.beforeEdit !== undefined && el.dataset.beforeEdit === newValue) {
+      // No actual change. If it's a placeholder field left empty, re-render
+      // so the placeholder text reappears instead of leaving it blank.
+      if (el.dataset.placeholder === 'true' && newValue === '') {
+        renderChartView(currentData);
+      }
+      return; // don't clutter undo history with a no-op edit
+    }
     snapshotForUndo();
     setAtPath(currentData, path, newValue);
   });
