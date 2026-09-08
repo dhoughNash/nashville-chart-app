@@ -2125,7 +2125,7 @@ async function getChartsIndexFromDrive() {
     title: (f.appProperties && f.appProperties.title) || 'Untitled',
     key: (f.appProperties && f.appProperties.key) || '',
     tempo: (f.appProperties && f.appProperties.tempo) || '',
-    sectionCount: parseInt((f.appProperties && f.appProperties.sectionCount) || '0', 10),
+    name: (f.appProperties && f.appProperties.name) || '',
     updatedAt: new Date(f.modifiedTime).getTime(),
   }));
 }
@@ -2135,7 +2135,7 @@ async function saveChartToDrive(data, existingId) {
     title: data.title || 'Untitled',
     key: data.key || '',
     tempo: data.tempo || '',
-    sectionCount: String((data.sections || []).length),
+    name: data.name || '',
   };
   const content = JSON.stringify(data);
 
@@ -2209,7 +2209,7 @@ async function saveChartToLibrary(data, existingId) {
     title: data.title || 'Untitled',
     key: data.key || '',
     tempo: data.tempo || '',
-    sectionCount: (data.sections || []).length,
+    name: data.name || '',
     updatedAt: Date.now()
   };
   const filtered = index.filter(e => e.id !== id);
@@ -2432,7 +2432,7 @@ async function renderLibraryView() {
       <div class="cc-meta">
         Key: ${e.key || '—'}<br>
         Tempo: ${e.tempo || '—'}<br>
-        ${e.sectionCount} section${e.sectionCount === 1 ? '' : 's'}
+        ${e.name ? e.name : '—'}
       </div>
     </div>`).join('')}</div>`;
 
@@ -3389,6 +3389,7 @@ function renderChartView(data) {
           </select>
         </div>
         <div class="kt-chip"><span class="kt-label">Tempo</span><span class="kt-value" ${editable(['meta', 'tempo'], data.tempo || '—', !editMode)}</span></div>
+        <div class="kt-chip"><span class="kt-label">Writer/Artist</span><span class="kt-value" ${editable(['meta', 'name'], data.name || '—', !editMode)}</span></div>
       </div>
     </div>
     ${sectionsHtml || '<div class="empty-state">No sections in this chart yet.</div>'}
