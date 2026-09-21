@@ -1486,7 +1486,7 @@ function performUndo() {
 
 // Workflow slugs are fixed for this account -- no need to expose them as
 // editable fields in the UI.
-const CHORDS_WORKFLOW_SLUG = 'untitled-workflow-40fd1d9';
+const CHORDS_WORKFLOW_SLUG = 'untitled-workflow-40fd1e9';
 const SECTIONS_WORKFLOW_SLUG = 'untitled-workflow-40fe1ea';
 
 // Music AI API key -- saved in localStorage so it's entered once, then
@@ -3001,6 +3001,53 @@ function splitSectionAtBar(secIdx, barIdx) {
     { label: section.label, bars: firstPart },
     { label: 'New', bars: secondPart }
   );
+
+  // Bars before the split point stay in secIdx; bars at/after it move into
+  // the new secIdx+1 section with their bar index rebased to 0. Every
+  // section that came after the original one shifts up by one section
+  // index since a new section was inserted between them.
+  const mapSecBar = (sec, bar) => {
+    if (sec === secIdx) {
+      return bar < barIdx ? [secIdx, bar] : [secIdx + 1, bar - barIdx];
+    }
+    if (sec > secIdx) return [sec + 1, bar];
+    return [sec, bar];
+  };
+
+  if (currentData.ties) {
+    const newTies = {};
+    Object.keys(currentData.ties).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      const [nSec, nBar] = mapSecBar(tSec, tBar);
+      newTies[`${nSec}-${nBar}`] = currentData.ties[key];
+    });
+    currentData.ties = newTies;
+  }
+
+  if (currentData.hairpins) {
+    const newHairpins = {};
+    Object.keys(currentData.hairpins).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      const [nSec, nBar] = mapSecBar(tSec, tBar);
+      newHairpins[`${nSec}-${nBar}`] = currentData.hairpins[key];
+    });
+    currentData.hairpins = newHairpins;
+  }
+
+  if (currentData.marks) {
+    const newMarks = {};
+    Object.keys(currentData.marks).forEach((key) => {
+      const path = JSON.parse(key);
+      if (path[0] !== 'bar') { newMarks[key] = currentData.marks[key]; return; }
+      const [nSec, nBar] = mapSecBar(path[1], path[2]);
+      const newPath = [...path];
+      newPath[1] = nSec;
+      newPath[2] = nBar;
+      newMarks[JSON.stringify(newPath)] = currentData.marks[key];
+    });
+    currentData.marks = newMarks;
+  }
+
   renderChartView(currentData);
 }
 
@@ -3009,8 +3056,54 @@ function mergeSectionUp(secIdx) {
   snapshotForUndo();
   const prev = currentData.sections[secIdx - 1];
   const current = currentData.sections[secIdx];
+  const prevBarCount = prev.bars.length;
   prev.bars = prev.bars.concat(current.bars);
   currentData.sections.splice(secIdx, 1);
+
+  // Bars from the merged-in section land after prev's original bars, so
+  // their tie/hairpin/mark keys need to move to prev's section index and
+  // shift their bar index up by prev's original length. Every section
+  // after secIdx also shifts down one section index since one was removed.
+  const mapSecBar = (sec, bar) => {
+    if (sec === secIdx) return [secIdx - 1, bar + prevBarCount];
+    if (sec > secIdx) return [sec - 1, bar];
+    return [sec, bar];
+  };
+
+  if (currentData.ties) {
+    const newTies = {};
+    Object.keys(currentData.ties).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      const [nSec, nBar] = mapSecBar(tSec, tBar);
+      newTies[`${nSec}-${nBar}`] = currentData.ties[key];
+    });
+    currentData.ties = newTies;
+  }
+
+  if (currentData.hairpins) {
+    const newHairpins = {};
+    Object.keys(currentData.hairpins).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      const [nSec, nBar] = mapSecBar(tSec, tBar);
+      newHairpins[`${nSec}-${nBar}`] = currentData.hairpins[key];
+    });
+    currentData.hairpins = newHairpins;
+  }
+
+  if (currentData.marks) {
+    const newMarks = {};
+    Object.keys(currentData.marks).forEach((key) => {
+      const path = JSON.parse(key);
+      if (path[0] !== 'bar') { newMarks[key] = currentData.marks[key]; return; }
+      const [nSec, nBar] = mapSecBar(path[1], path[2]);
+      const newPath = [...path];
+      newPath[1] = nSec;
+      newPath[2] = nBar;
+      newMarks[JSON.stringify(newPath)] = currentData.marks[key];
+    });
+    currentData.marks = newMarks;
+  }
+
   renderChartView(currentData);
 }
 
