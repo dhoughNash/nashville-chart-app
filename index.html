@@ -1701,10 +1701,19 @@ async function musicaiUploadFile(apiKey, file, logFn) {
 const RELAY_URL = '/.netlify/functions/musicai-relay';
 
 async function relayCall(action, params) {
+  // The relay works out who is calling from this login token -- the
+  // browser no longer tells it a user ID, so nobody can claim to be
+  // someone else.
+  const { data: sessionData } = await sb.auth.getSession();
+  const session = sessionData && sessionData.session;
+  if (!session) throw new Error('Your login expired. Please log in again.');
   const resp = await fetch(RELAY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, userId: currentUser.id, ...params }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ action, ...params }),
   });
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error || `Relay error: HTTP ${resp.status}`);
