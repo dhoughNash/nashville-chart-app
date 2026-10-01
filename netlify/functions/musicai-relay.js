@@ -30,14 +30,19 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
   }
 
-  const { action, userId } = body;
-  if (!userId) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Missing userId' }) };
+  const { action } = body;
+
+  // Who is calling? Not whatever the request body claims -- Supabase
+  // tells us, from the caller's login token. Every action requires this,
+  // including the ones that only check job status.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Not logged in. Please refresh the page and log in again.' }) };
   }
-  // userId goes into a database URL below, so it has to be a real UUID
-  // and nothing else.
-  if (typeof userId !== 'string' || !UUID_RE.test(userId)) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid userId' }) };
+  const userId = await verifyUserFromToken(token);
+  if (!userId) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Your login is no longer valid. Please refresh the page and log in again.' }) };
   }
 
   try {
@@ -62,6 +67,26 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
+
+// Asks Supabase Auth who a login token belongs to. Returns the user's id,
+// or null if the token is missing, expired, or fake.
+async function verifyUserFromToken(token) {
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!resp.ok) return null;
+    const user = await resp.json();
+    if (!user || typeof user.id !== 'string' || !UUID_RE.test(user.id)) return null;
+    return user.id;
+  } catch (e) {
+    console.error('Token verification failed', e);
+    return null;
+  }
+}
 
 async function fetchSubscriptionRow(userId) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?user_id=eq.${userId}&select=*`, {
