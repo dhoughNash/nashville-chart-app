@@ -6,10 +6,17 @@
 // upload -> submit job -> poll -> fetch result flow (same logic as
 // before) -- it just calls this relay instead of api.music.ai directly,
 // and never sees the real key.
+//
+// The subscriptions table lives in its own schema (chart_book), so every
+// database call below names that schema explicitly. If the user has no
+// subscription row yet, this relay creates it (the browser no longer can).
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const MUSIC_AI_API_KEY = process.env.MUSIC_AI_API_KEY;
+
+const DB_SCHEMA = 'chart_book';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -26,6 +33,11 @@ exports.handler = async (event) => {
   const { action, userId } = body;
   if (!userId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing userId' }) };
+  }
+  // userId goes into a database URL below, so it has to be a real UUID
+  // and nothing else.
+  if (typeof userId !== 'string' || !UUID_RE.test(userId)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid userId' }) };
   }
 
   try {
@@ -51,16 +63,45 @@ exports.handler = async (event) => {
   }
 };
 
-async function getSubscriptionRow(userId) {
+async function fetchSubscriptionRow(userId) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?user_id=eq.${userId}&select=*`, {
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Accept-Profile': DB_SCHEMA,
     },
   });
   if (!resp.ok) throw new Error(`Failed to read subscription: ${resp.status}`);
   const rows = await resp.json();
   return rows[0] || null;
+}
+
+// Returns the user's subscription row, creating a blank one (status
+// 'inactive', table defaults for everything else) if they don't have one
+// yet. Safe to call repeatedly: ignore-duplicates means a second attempt,
+// or two requests racing each other, can never overwrite an existing row.
+async function getSubscriptionRow(userId) {
+  const existing = await fetchSubscriptionRow(userId);
+  if (existing) return existing;
+
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?on_conflict=user_id`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      'Content-Profile': DB_SCHEMA,
+      Prefer: 'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify({ user_id: userId, status: 'inactive' }),
+  });
+  if (!resp.ok) {
+    // Most likely cause: this user id doesn't exist in auth.users.
+    console.error(`Failed to create subscription row: ${resp.status} ${await resp.text()}`);
+    throw new Error('Could not set up a subscription record for this user.');
+  }
+
+  return await fetchSubscriptionRow(userId);
 }
 
 // Checks eligibility WITHOUT consuming anything -- actual usage only gets
@@ -155,6 +196,7 @@ async function handleMarkComplete(userId) {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       'Content-Type': 'application/json',
+      'Content-Profile': DB_SCHEMA,
       Prefer: 'return=minimal',
     },
     body: JSON.stringify(patchData),

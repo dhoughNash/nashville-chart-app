@@ -1,12 +1,17 @@
 // Save this file at: netlify/functions/stripe-webhook.js
 // (create via GitHub -> Add file -> Create new file, type the full path
 // into the filename field -- GitHub creates the folders automatically)
+//
+// The subscriptions table lives in its own schema (chart_book), so every
+// database call below names that schema explicitly.
 
 const Stripe = require('stripe');
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const DB_SCHEMA = 'chart_book';
 
 // Maps each subscription price -- by its unique Stripe Price ID, not
 // dollar amount -- to a tier. Price IDs are globally unique, so this can
@@ -112,6 +117,7 @@ async function upsertByUserId(userId, data) {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       'Content-Type': 'application/json',
+      'Content-Profile': DB_SCHEMA,
       Prefer: 'resolution=merge-duplicates,return=minimal',
     },
     body: JSON.stringify({ user_id: userId, ...data }),
@@ -126,6 +132,7 @@ async function patchByStripeCustomerId(customerId, data) {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       'Content-Type': 'application/json',
+      'Content-Profile': DB_SCHEMA,
       Prefer: 'return=minimal',
     },
     body: JSON.stringify(data),
