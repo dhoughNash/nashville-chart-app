@@ -2324,7 +2324,11 @@ function renderLoginView(prefillMode) {
 
     try {
       if (mode === 'signup') {
-        const { data, error } = await sb.auth.signUp({ email, password });
+        const { data, error } = await sb.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: 'https://number-chart.masterbus.app/' }
+        });
         if (error) throw error;
         if (data.user && !data.session) {
           showLoginError('Account created -- check your email to confirm before signing in.');
