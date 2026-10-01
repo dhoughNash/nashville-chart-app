@@ -1376,7 +1376,9 @@
 
 const SUPABASE_URL = 'https://ydxriywpkkdptwcuqaaj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkeHJpeXdwa2tkcHR3Y3VxYWFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1Njc5NjYsImV4cCI6MjA5NDE0Mzk2Nn0.SYACMatBKKEZV0Wo3rJ6iPSzt0E14qXjT2DieUsG9Zk';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  db: { schema: 'chart_book' }
+});
 
 let currentUser = null; // Supabase user object once signed in
 let currentSubscription = null; // this user's row from the subscriptions table
@@ -1404,25 +1406,9 @@ async function loadSubscriptionStatus() {
     return;
   }
 
-  if (!data) {
-    // First login ever -- create the row ourselves now so the webhook
-    // always has something to update later, rather than depending on it
-    // to create the very first row (which is also handled defensively on
-    // that end, but this is the normal path).
-    const { data: inserted, error: insertError } = await sb
-      .from('subscriptions')
-      .insert({ user_id: currentUser.id, status: 'inactive' })
-      .select()
-      .single();
-    if (insertError) {
-      console.error('Failed to create subscription row', insertError);
-      currentSubscription = null;
-      return;
-    }
-    currentSubscription = inserted;
-  } else {
-    currentSubscription = data;
-  }
+  // No row yet is fine -- the server (relay or webhook) creates it.
+  // The browser never writes to this table.
+  currentSubscription = data;
 }
 
 function isSubscriptionActive() {
