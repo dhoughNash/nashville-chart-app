@@ -9,19 +9,19 @@
 
   :root {
     /* shell (binder) tokens */
-    --shell-bg: #1B1913;
-    --shell-panel: #262319;
-    --shell-edge: #3A3627;
-    --shell-text: #E8E0CC;
-    --shell-text-dim: #948C74;
-    --brass: #B8925A;
+    --shell-bg: #0E0C11;
+    --shell-panel: #17151C;
+    --shell-edge: #3B3520;
+    --shell-text: #F2E9C8;
+    --shell-text-dim: #A69C66;
+    --brass: #EDD35E;
     --red: #B23A2E;
 
     /* chart page tokens */
-    --paper: #F2ECDA;
-    --paper-edge: #E4DCC3;
-    --ink: #000000;
-    --ink-soft: #4A5064;
+    --paper: #E3CB55;
+    --paper-edge: #F6DB66;
+    --ink: #16140F;
+    --ink-soft: #544A23;
   }
 
   * { box-sizing: border-box; }
@@ -30,7 +30,7 @@
     margin: 0;
     min-height: 100vh;
     background: var(--shell-bg);
-    background-image: radial-gradient(ellipse at top, rgba(184,146,90,0.07), transparent 55%);
+    background-image: radial-gradient(ellipse at top, rgba(237,211,94,0.07), transparent 55%);
     color: var(--shell-text);
     font-family: 'Public Sans', sans-serif;
   }
@@ -353,7 +353,7 @@
   button.shell-btn.secondary {
     background: transparent;
     color: var(--shell-text-dim);
-    border: 1px solid #4A4530;
+    border: 1px solid #5A4E22;
   }
 
   /* --- library --- */
@@ -373,7 +373,7 @@
   select.shell-select {
     background: transparent;
     color: var(--shell-text-dim);
-    border: 1px solid #4A4530;
+    border: 1px solid #5A4E22;
     border-radius: 5px;
     padding: 8px 10px;
     font-family: 'Public Sans', sans-serif;
@@ -478,8 +478,8 @@
     font-family: 'JetBrains Mono', monospace;
     font-size: 11.5px;
     color: var(--brass);
-    background: rgba(184, 146, 90, 0.1);
-    border: 1px solid rgba(184, 146, 90, 0.35);
+    background: rgba(237, 211, 94, 0.1);
+    border: 1px solid rgba(237, 211, 94, 0.35);
     border-radius: 6px;
     padding: 8px 12px;
     margin-bottom: 16px;
@@ -567,7 +567,7 @@
 
   input[type="text"] {
     width: 100%;
-    background: #14130E;
+    background: #0A090D;
     border: 1px solid var(--shell-edge);
     border-radius: 4px;
     padding: 8px 10px;
@@ -598,7 +598,7 @@
   }
   .drop-zone:hover, .drop-zone.drag-over {
     border-color: var(--brass);
-    background: rgba(184, 146, 90, 0.06);
+    background: rgba(237, 211, 94, 0.06);
   }
   .drop-zone-text {
     font-family: 'Public Sans', sans-serif;
@@ -641,7 +641,7 @@
 
   input[type="file"] {
     width: 100%;
-    background: #14130E;
+    background: #0A090D;
     border: 1px solid var(--shell-edge);
     border-radius: 4px;
     padding: 8px 10px;
@@ -653,7 +653,7 @@
   textarea {
     width: 100%;
     height: 140px;
-    background: #14130E;
+    background: #0A090D;
     border: 1px solid var(--shell-edge);
     border-radius: 4px;
     padding: 10px 12px;
@@ -707,6 +707,7 @@
     max-width: 760px;
     margin: 0 auto;
     background: var(--paper);
+    background-image: linear-gradient(135deg, #FDE26C 0%, #D9BF4C 50%, #BFA634 100%);
     border: 1px solid var(--paper-edge);
     box-shadow: 0 4px 22px rgba(0,0,0,0.35);
     padding: 40px 44px 50px;
@@ -787,7 +788,7 @@
   }
 
   .section-row:not(:first-child) {
-    border-top: 1px solid rgba(35, 40, 56, 0.18);
+    border-top: 1px solid rgba(22, 20, 15, 0.22);
   }
 
   .section-label-col {
