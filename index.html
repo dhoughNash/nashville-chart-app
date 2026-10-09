@@ -1185,7 +1185,93 @@
   }
   .save-toast.show { opacity: 1; }
 
+  /* --- help overlay --- */
+
+  .help-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 4, 8, 0.78);
+    display: none;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 40px 16px;
+    z-index: 1000;
+  }
+  .help-overlay.open { display: flex; }
+
+  .help-panel {
+    position: relative;
+    width: 100%;
+    max-width: 680px;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 12px;
+    padding: 28px 32px 32px;
+  }
+
+  .help-close {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: transparent;
+    border: none;
+    color: var(--shell-text-dim);
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .help-close:hover { color: var(--shell-text); }
+
+  .help-panel h2 {
+    font-family: 'Architects Daughter', cursive;
+    font-weight: 400;
+    font-size: 28px;
+    color: var(--brass);
+    margin: 0 0 4px;
+  }
+  .help-sub { margin: 0 0 22px; color: var(--shell-text-dim); font-size: 14px; }
+
+  .help-step {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 18px 0;
+    border-top: 1px solid var(--shell-edge);
+  }
+  .help-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--brass);
+    color: var(--shell-bg);
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .help-step h3 { margin: 4px 0 6px; font-size: 16px; color: var(--shell-text); }
+  .help-step p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; color: var(--shell-text-dim); }
+  .help-step p b { color: var(--shell-text); }
+  .help-shots { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .help-shots img {
+    max-width: 100%;
+    border: 1px solid var(--shell-edge);
+    border-radius: 6px;
+  }
+  .help-shots img.small { max-width: 180px; }
+  .help-shots img.tall { max-height: 420px; max-width: none; }
+  .help-footer {
+    border-top: 1px solid var(--shell-edge);
+    padding-top: 18px;
+    font-size: 14px;
+    color: var(--shell-text-dim);
+  }
+  .help-footer a { color: var(--brass); }
+
   @media (max-width: 560px) {
+    .help-panel { padding: 24px 18px 26px; }
     .sheet { padding: 24px 16px 32px; }
     .section-row { flex-direction: column; align-items: flex-start; gap: 8px; }
     .section-label-col { width: auto; }
@@ -1360,6 +1446,7 @@
       <button class="nav-tab" id="tabNew">New Chart</button>
     </div>
     <div class="nav-right">
+      <button class="nav-tab" id="tabHelp">Help</button>
       <button class="nav-tab" id="tabPlans">Plans</button>
       <div id="userStatus" class="user-status"></div>
       <div id="authStatus" class="auth-status"></div>
@@ -1369,6 +1456,82 @@
   <div id="viewContainer"></div>
 
   <div class="save-toast" id="saveToast">Saved to library</div>
+
+  <div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="help-panel">
+      <button class="help-close" id="helpClose" aria-label="Close help">&times;</button>
+      <h2 id="helpTitle">How to use Nashville Chart Book</h2>
+      <p class="help-sub">Turn a song into a number chart in a few easy steps.</p>
+
+      <div class="help-step">
+        <div class="help-num">1</div>
+        <div>
+          <h3>Log in</h3>
+          <p>Type your email and password, then tap <b>Sign In</b>. No account yet? Tap <b>Create one</b>.</p>
+          <div class="help-shots"><img src="help/01-login.png" alt="Login screen" style="max-width:320px" loading="lazy"></div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">2</div>
+        <div>
+          <h3>Add your song</h3>
+          <p>Tap <b>New Chart</b> at the top. Drop in an audio file (or tap the box to pick one). The app listens and builds the chart for you. Give it a minute.</p>
+          <div class="help-shots"><img src="help/02-add-song.png" alt="New Chart upload screen" loading="lazy"></div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">3</div>
+        <div>
+          <h3>Read your chart</h3>
+          <p>Each box is one bar of music. The numbers are the chords: <b>1</b> is the home chord, <b>4</b> and <b>5</b> are its neighbors. Tap <b>Show Chords</b> to see letters instead.</p>
+          <div class="help-shots"><img src="help/03-read.png" alt="Finished chart" loading="lazy"></div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">4</div>
+        <div>
+          <h3>Fix anything that's off</h3>
+          <p>Hit the <b>Edit</b> button at the top. Then tap any chord or label to change it. Hover over a bar and a small set of buttons pops up above it. Use them to add a bar or merge it up.</p>
+          <div class="help-shots">
+            <img src="help/04a-edit-toolbar.png" alt="Edit toolbar" loading="lazy">
+            <img class="small" src="help/04b-bar-buttons.png" alt="Bar buttons" loading="lazy">
+            <img class="small" src="help/04c-bar-menu.png" alt="Add bar and merge up" loading="lazy">
+          </div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">5</div>
+        <div>
+          <h3>Add the little marks</h3>
+          <p>While editing, a strip of marks shows up on the side: shapes, dots, pushes, stops, 7ths and more. Pick one, then tap the chord you want it on.</p>
+          <div class="help-shots"><img class="tall" src="help/05-marks.png" alt="Marks toolbar" loading="lazy"></div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">6</div>
+        <div>
+          <h3>Oops? Undo it</h3>
+          <p>Tap <b>Undo</b>, or press <b>Cmd+Z</b> (Mac) or <b>Ctrl+Z</b> (PC). It can go back up to 50 steps.</p>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-num">7</div>
+        <div>
+          <h3>Save it</h3>
+          <p>Tap <b>Done Editing</b>, then <b>Save to Library</b>. Your charts live in the <b>Library</b> tab, and they back up to Google Drive when you're signed in. Need a copy for the band? Tap <b>Print / Save PDF</b>.</p>
+          <div class="help-shots"><img src="help/07-save.png" alt="Library" loading="lazy"></div>
+        </div>
+      </div>
+
+      <div class="help-footer">For further assistance, please contact <a href="mailto:masterbusMDM@gmail.com">masterbusMDM@gmail.com</a>.</div>
+    </div>
+  </div>
 
 <script>
 // ---------- Supabase login (app access gate -- separate from Google Drive sync) ----------
@@ -2272,6 +2435,15 @@ tabPlans.addEventListener('click', () => {
   renderPaywallView();
 });
 
+// ---------- help overlay ----------
+const helpOverlay = document.getElementById('helpOverlay');
+function openHelp() { helpOverlay.classList.add('open'); helpOverlay.scrollTop = 0; }
+function closeHelp() { helpOverlay.classList.remove('open'); }
+document.getElementById('tabHelp').addEventListener('click', openHelp);
+document.getElementById('helpClose').addEventListener('click', closeHelp);
+helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) closeHelp(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHelp(); });
+
 function showToast(msg) {
   saveToast.textContent = msg;
   saveToast.classList.add('show');
@@ -2438,13 +2610,11 @@ async function renderLibraryView() {
             </select>
             <button class="shell-btn secondary sort-dir-btn" id="librarySortDirBtn" title="${librarySortDir === 'asc' ? 'Ascending' : 'Descending'} -- click to flip">${librarySortDir === 'asc' ? '↑' : '↓'}</button>
           </div>
-          <button class="shell-btn" id="newChartBtn">+ New Chart</button>
         </div>
       </div>
       <div id="libraryContent"></div>
     </div>
   `;
-  document.getElementById('newChartBtn').addEventListener('click', () => renderUploadView());
   document.getElementById('librarySortField').addEventListener('change', (e) => {
     librarySortField = e.target.value;
     renderLibraryView();
