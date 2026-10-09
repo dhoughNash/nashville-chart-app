@@ -1230,7 +1230,16 @@
     color: var(--brass);
     margin: 0 0 4px;
   }
-  .help-sub { margin: 0 0 22px; color: var(--shell-text-dim); font-size: 14px; }
+  .help-intro {
+    margin: 12px 0 22px;
+    padding: 14px 18px;
+    background: rgba(237, 211, 94, 0.07);
+    border: 1px solid var(--shell-edge);
+    border-left: 3px solid var(--brass);
+    border-radius: 8px;
+  }
+  .help-intro p { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: var(--shell-text); }
+  .help-intro p:last-child { margin-bottom: 0; }
 
   .help-step {
     display: grid;
@@ -1461,7 +1470,11 @@
     <div class="help-panel">
       <button class="help-close" id="helpClose" aria-label="Close help">&times;</button>
       <h2 id="helpTitle">How to use Nashville Chart Book</h2>
-      <p class="help-sub">Turn a song into a number chart in a few easy steps.</p>
+      <div class="help-intro">
+        <p><b>Welcome to Nashville Chart Book!</b> This is designed to get you from a recording to a Nashville chart as cleanly and quickly as possible. The cleaner the recording, the better the analysis will be.</p>
+        <p>This utilizes the Music.ai decoder, so we are limited to the chords that it can return, which typically are just general block chords and don't dive too deep into major sevenths, split bass notes, or anything too intricate. You can add those yourself using the edit feature, though!</p>
+        <p>Also, it's not always perfect, so double-check your keys and the arrangement, which you can edit yourself. It takes a little practice, but you get used to it!</p>
+      </div>
 
       <div class="help-step">
         <div class="help-num">1</div>
