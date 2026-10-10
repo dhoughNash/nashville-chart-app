@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nashville Chart Book</title>
+<link rel="icon" type="image/png" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<meta name="theme-color" content="#0E0C11">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -47,8 +50,18 @@
 
   .brand {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-logo { height: 30px; width: auto; display: block; }
+
+  .login-logo {
+    display: block;
+    width: 100%;
+    max-width: 220px;
+    height: auto;
+    margin: 0 auto 14px;
   }
 
   .brand .brand-mark {
@@ -1448,6 +1461,7 @@
 
   <nav class="topnav">
     <div class="brand">
+      <img class="brand-logo" src="/img/logo-mark.png" alt="">
       <span class="brand-mark">Nashville Chart Book</span>
     </div>
     <div class="nav-tabs">
@@ -2473,7 +2487,8 @@ function renderLoginView(prefillMode) {
   viewContainer.innerHTML = `
     <div class="view login-view">
       <div class="login-panel">
-        <div class="login-title">Nashville Chart Book</div>
+        <img class="login-logo" src="/img/logo.png" alt="Nashville Chart Book">
+        <div class="login-title" style="display:none">Nashville Chart Book</div>
         <div class="login-subtitle">Sign in to continue</div>
         <div class="field">
           <label for="loginEmail">Email</label>
