@@ -46,6 +46,11 @@ const JOB_ID_RE = /^[A-Za-z0-9_-]{6,128}$/;
 
 const reply = (statusCode, obj) => ({ statusCode, body: JSON.stringify(obj) });
 
+// Errors whose message is written for the user and safe to show them. Any other
+// error (a database or Music AI failure) is logged on the server only; the browser
+// gets a generic message so internal details never leak.
+class PublicError extends Error {}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method not allowed' };
@@ -105,7 +110,8 @@ exports.handler = async (event) => {
     }
   } catch (err) {
     console.error(err);
-    return reply(500, { error: err.message });
+    if (err instanceof PublicError) return reply(500, { error: err.message });
+    return reply(500, { error: 'Something went wrong. Please try again in a moment.' });
   }
 };
 
@@ -215,7 +221,7 @@ async function getSubscriptionRow(userId) {
   } catch (e) {
     // Most likely cause: this user id doesn't exist in auth.users.
     console.error('Failed to create subscription row', e);
-    throw new Error('Could not set up a subscription record for this user.');
+    throw new PublicError('Could not set up a subscription record for this user.');
   }
   return await fetchSubscriptionRow(userId);
 }
@@ -391,7 +397,7 @@ async function handleSubmitJob(userId, workflow, inputUrl, name) {
     } catch (err) {
       console.error(`Job ${job.id} was created for user ${userId} but could not be recorded`, err);
       await releaseUnit(userId, reservation.mode).catch((e) => console.error('Refund failed', e));
-      throw new Error('Could not record this job. Please try again.');
+      throw new PublicError('Could not record this job. Please try again.');
     }
     return reply(200, job);
   }
@@ -425,7 +431,7 @@ async function handleSubmitJob(userId, workflow, inputUrl, name) {
   } catch (err) {
     console.error(`Sections job ${job.id} was created for user ${userId} but could not be recorded`, err);
     await unclaim();
-    throw new Error('Could not record this job. Please try again.');
+    throw new PublicError('Could not record this job. Please try again.');
   }
   return reply(200, job);
 }
