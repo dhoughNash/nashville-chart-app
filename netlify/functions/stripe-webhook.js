@@ -84,8 +84,10 @@ exports.handler = async (event) => {
         stripe_subscription_id: subscription.id,
         period_reset_at: new Date(subscription.current_period_end * 1000).toISOString(),
       };
-      // A fresh billing period (renewal, or moving between tiers) resets usage
-      if (status === 'active') {
+      // Only a new billing period (renewal) resets usage. This event also fires
+      // for plan changes, payment-method edits and other portal changes, and
+      // resetting on those would let a user refill their charts without paying.
+      if (status === 'active' && billingPeriodChanged(stripeEvent.data.previous_attributes)) {
         patchData.charts_used = 0;
       }
 
@@ -109,6 +111,16 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: `Handler error: ${err.message}` };
   }
 };
+
+// True when Stripe says the billing period moved forward on this update.
+// Stripe lists only the changed fields in previous_attributes; the period end
+// is on the subscription itself in older API versions and on its items in newer ones.
+function billingPeriodChanged(previous) {
+  if (!previous) return false;
+  if ('current_period_end' in previous) return true;
+  const items = previous.items && previous.items.data;
+  return Array.isArray(items) && items.some(i => i && 'current_period_end' in i);
+}
 
 async function upsertByUserId(userId, data) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions`, {
