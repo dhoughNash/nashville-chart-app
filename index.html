@@ -199,7 +199,8 @@
     padding: 9px 10px;
     cursor: pointer;
   }
-  button.acct-item:hover { background: #221F29; }
+  button.acct-item:hover, a.acct-item:hover { background: #221F29; }
+  a.acct-item { text-decoration: none; }
   .acct-item.active { color: var(--brass); }
   .drive-on { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #6BBF6A; }
 
@@ -1566,7 +1567,8 @@
         <div class="acct-menu" id="acctMenu" hidden>
           <div class="acct-head"><span class="user-email" id="acctEmail"></span><span id="acctTier"></span></div>
           <hr>
-          <button class="acct-item" id="tabPlans">Plans &amp; billing</button>
+          <button class="acct-item" id="tabPlans">Plans</button>
+          <a class="acct-item" id="manageSub" href="https://billing.stripe.com/p/login/4gMdRbeAg8v50BL0MD9R600" target="_blank" rel="noopener" style="display:none">Manage subscription</a>
           <button class="acct-item" id="acctHelp">Help</button>
           <div id="authStatus"></div>
           <hr>
@@ -2721,6 +2723,7 @@ function renderPaywallView() {
       </div>
       <div class="paywall-footer">
         <button class="shell-btn secondary" id="paywallRefreshBtn">I just subscribed -- check again</button>
+        ${isActive ? `<a class="shell-btn secondary" href="https://billing.stripe.com/p/login/4gMdRbeAg8v50BL0MD9R600" target="_blank" rel="noopener">Manage or cancel subscription</a>` : ''}
         <button class="auth-btn" id="paywallSignOutBtn">Log out</button>
       </div>
     </div>
@@ -4028,6 +4031,8 @@ function updateUserStatusUI() {
     tier.innerHTML = (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier)
       ? `<span class="user-tier">${currentSubscription.tier.charAt(0).toUpperCase() + currentSubscription.tier.slice(1)}</span>`
       : '';
+    const sub = document.getElementById('manageSub');
+    if (sub) sub.style.display = (currentSubscription && ['active','past_due'].includes(currentSubscription.status)) ? '' : 'none';
     acct.style.display = '';
   } else {
     acct.style.display = 'none';
