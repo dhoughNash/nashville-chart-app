@@ -70,7 +70,14 @@
     color: var(--brass);
   }
 
-  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 8px;
+    padding: 3px;
+  }
 
   .nav-tab {
     background: transparent;
@@ -92,25 +99,106 @@
     background: var(--brass);
   }
 
-  .auth-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
   .nav-right {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 12px;
   }
 
-  .user-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-right: 16px;
-    border-right: 1px solid var(--shell-edge);
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--shell-edge);
+    color: var(--shell-text-dim);
+    font-family: 'Public Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
   }
+  .icon-btn:hover { color: var(--shell-text); border-color: var(--brass); }
+
+  .acct { position: relative; }
+
+  .acct-avatar {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    color: var(--brass);
+    font-family: 'Public Sans', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+  }
+  .acct-avatar:hover, .acct-avatar[aria-expanded="true"] { border-color: var(--brass); }
+
+  .drive-dot {
+    display: none;
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #6BBF6A;
+    border: 2px solid var(--shell-bg);
+  }
+  .drive-dot.on { display: block; }
+
+  .acct-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    width: 250px;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    z-index: 50;
+  }
+  .acct-menu[hidden] { display: none; }
+
+  .acct-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 9px 10px;
+  }
+  .acct-head .user-email { word-break: break-all; }
+  .acct-head .user-tier { margin-left: 0; }
+
+  .acct-menu hr { border: 0; border-top: 1px solid var(--shell-edge); margin: 6px 0; }
+
+  .acct-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: var(--shell-text);
+    font-family: 'Public Sans', sans-serif;
+    font-size: 12.5px;
+    text-align: left;
+    padding: 9px 10px;
+    cursor: pointer;
+  }
+  button.acct-item:hover { background: #221F29; }
+  .acct-item.active { color: var(--brass); }
+  .drive-on { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #6BBF6A; }
 
   .user-email {
     font-family: 'JetBrains Mono', monospace;
@@ -1297,9 +1385,9 @@
     .sheet { padding: 24px 16px 32px; }
     .section-row { flex-direction: column; align-items: flex-start; gap: 8px; }
     .section-label-col { width: auto; }
-    .topnav { flex-direction: column; gap: 12px; align-items: flex-start; }
-    .nav-tabs { flex-wrap: wrap; }
-    .nav-right { flex-wrap: wrap; row-gap: 8px; }
+    .topnav { flex-wrap: wrap; gap: 12px; padding: 12px 16px; }
+    .nav-tabs { order: 3; width: 100%; }
+    .nav-tabs .nav-tab { flex: 1; }
 
     /* The chart toolbar can carry up to 6 buttons (Show Chords, Fix Tonic,
        Print, Edit, Save, Library) -- on a narrow screen these need to wrap
@@ -1469,10 +1557,19 @@
       <button class="nav-tab" id="tabNew">New Chart</button>
     </div>
     <div class="nav-right">
-      <button class="nav-tab" id="tabHelp">Help</button>
-      <button class="nav-tab" id="tabPlans">Plans</button>
-      <div id="userStatus" class="user-status"></div>
-      <div id="authStatus" class="auth-status"></div>
+      <button class="icon-btn" id="tabHelp" title="Help" aria-label="Help">?</button>
+      <div class="acct" id="acct" style="display:none">
+        <button class="acct-avatar" id="acctBtn" aria-haspopup="true" aria-expanded="false" aria-label="Account menu"><span id="acctInitial">?</span><i class="drive-dot" id="driveDot"></i></button>
+        <div class="acct-menu" id="acctMenu" hidden>
+          <div class="acct-head"><span class="user-email" id="acctEmail"></span><span id="acctTier"></span></div>
+          <hr>
+          <button class="acct-item" id="tabPlans">Plans &amp; billing</button>
+          <button class="acct-item" id="acctHelp">Help</button>
+          <div id="authStatus"></div>
+          <hr>
+          <button class="acct-item" id="appSignOutBtn">Log out</button>
+        </div>
+      </div>
     </div>
   </nav>
 
@@ -2306,8 +2403,10 @@ function updateAuthUI() {
   const el = document.getElementById('authStatus');
   if (!el) return;
   el.innerHTML = driveSignedIn
-    ? `<span class="auth-label">Synced to Drive</span><button class="auth-btn" id="signOutBtn">Sign out</button>`
-    : `<button class="auth-btn" id="signInBtn">Sign in with Google</button>`;
+    ? `<div class="acct-item">Google Drive <span class="drive-on">&#9679; Synced</span></div><button class="acct-item" id="signOutBtn">Disconnect Drive</button>`
+    : `<button class="acct-item" id="signInBtn">Connect Google Drive</button>`;
+  const dot = document.getElementById('driveDot');
+  if (dot) dot.classList.toggle('on', !!driveSignedIn);
   const signInBtn = document.getElementById('signInBtn');
   if (signInBtn) signInBtn.addEventListener('click', signInWithGoogle);
   const signOutBtn = document.getElementById('signOutBtn');
@@ -2471,6 +2570,26 @@ document.getElementById('tabHelp').addEventListener('click', openHelp);
 document.getElementById('helpClose').addEventListener('click', closeHelp);
 helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) closeHelp(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHelp(); });
+
+// ---------- account menu ----------
+const acctBtn = document.getElementById('acctBtn');
+const acctMenu = document.getElementById('acctMenu');
+function closeAcctMenu() {
+  if (!acctMenu) return;
+  acctMenu.hidden = true;
+  acctBtn.setAttribute('aria-expanded', 'false');
+}
+acctBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = acctMenu.hidden;
+  acctMenu.hidden = !open;
+  acctBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+});
+acctMenu.addEventListener('click', (e) => { if (e.target.closest('button')) closeAcctMenu(); });
+document.addEventListener('click', (e) => { if (!e.target.closest('#acct')) closeAcctMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAcctMenu(); });
+document.getElementById('acctHelp').addEventListener('click', openHelp);
+document.getElementById('appSignOutBtn').addEventListener('click', signOutOfApp);
 
 function showToast(msg) {
   saveToast.textContent = msg;
@@ -3896,16 +4015,20 @@ document.addEventListener('keydown', (e) => {
 // ---------- boot ----------
 
 function updateUserStatusUI() {
-  const el = document.getElementById('userStatus');
-  if (!el) return;
+  const acct = document.getElementById('acct');
+  if (!acct) return;
   if (currentUser) {
-    const tierLabel = (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier)
+    const email = currentUser.email || '';
+    document.getElementById('acctInitial').textContent = (email.charAt(0) || '?').toUpperCase();
+    document.getElementById('acctEmail').textContent = email;
+    const tier = document.getElementById('acctTier');
+    tier.innerHTML = (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier)
       ? `<span class="user-tier">${currentSubscription.tier.charAt(0).toUpperCase() + currentSubscription.tier.slice(1)}</span>`
       : '';
-    el.innerHTML = `<span class="user-email">${currentUser.email}</span>${tierLabel}<button class="auth-btn" id="appSignOutBtn">Log out</button>`;
-    document.getElementById('appSignOutBtn').addEventListener('click', signOutOfApp);
+    acct.style.display = '';
   } else {
-    el.innerHTML = '';
+    acct.style.display = 'none';
+    closeAcctMenu();
   }
   // Hide the nav tabs entirely while signed out -- otherwise they'd still
   // be clickable and bypass the login screen.
