@@ -13,7 +13,7 @@
 //      the chords job is submitted, atomically, so parallel requests can't
 //      overspend. If Music AI reports that job FAILED, the unit is refunded
 //      automatically. The sections job is a companion of one chords job.
-//   4. Workflows: only the two known workflow slugs can be run.
+//   4. Workflows: only the three known workflow slugs can be run.
 //   5. Ownership: every job is recorded against the user who created it in
 //      chart_book.jobs, and status/result calls only work for your own jobs.
 //
@@ -37,6 +37,9 @@ const DB_SCHEMA = 'chart_book';
 // index.html. If you ever change a slug there, change it here too.
 const CHORDS_WORKFLOW = 'untitled-workflow-40fd1d9';
 const SECTIONS_WORKFLOW = 'untitled-workflow-40fe1ea';
+// The combined workflow (chords + beats + sections in ONE job). Must match
+// COMBINED_WORKFLOW_SLUG in index.html. It costs one unit, like a chords job.
+const COMBINED_WORKFLOW = 'untitled-workflow-46188d3';
 
 // A sections job must follow a chords job from this user within this window.
 const SECTIONS_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -371,7 +374,7 @@ async function handleGetUploadUrl(userId) {
 }
 
 async function handleSubmitJob(userId, workflow, inputUrl, name) {
-  if (workflow !== CHORDS_WORKFLOW && workflow !== SECTIONS_WORKFLOW) {
+  if (workflow !== CHORDS_WORKFLOW && workflow !== SECTIONS_WORKFLOW && workflow !== COMBINED_WORKFLOW) {
     return reply(400, { error: 'Unknown workflow.' });
   }
   if (typeof inputUrl !== 'string' || !inputUrl.startsWith('https://')) {
@@ -379,7 +382,7 @@ async function handleSubmitJob(userId, workflow, inputUrl, name) {
   }
   const jobName = (typeof name === 'string' && name.trim() ? name.trim() : 'Nashville chart').slice(0, 100);
 
-  if (workflow === CHORDS_WORKFLOW) {
+  if (workflow === CHORDS_WORKFLOW || workflow === COMBINED_WORKFLOW) {
     // This is the job that costs a unit. Reserve first, refund if anything
     // goes wrong before we have a recorded job.
     const reservation = await reserveUnit(userId);
