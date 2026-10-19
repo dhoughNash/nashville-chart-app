@@ -1687,6 +1687,19 @@ function subscribeUrl(tier) {
   return `${STRIPE_PAYMENT_LINKS[tier]}?client_reference_id=${currentUser.id}`;
 }
 
+// Registers this person for Chart Book on the shared platform (the server
+// checks this before it will process charts). Safe to call every sign-in --
+// it does nothing if they're already registered. The client defaults to the
+// chart_book schema, so the platform function is called via public.
+async function ensureAppAccess() {
+  try {
+    const { error } = await sb.schema('public').rpc('join_app', { p_app: 'charting' });
+    if (error) console.error('join_app failed', error);
+  } catch (e) {
+    console.error('join_app failed', e);
+  }
+}
+
 async function loadSubscriptionStatus() {
   const { data, error } = await sb
     .from('subscriptions')
@@ -4066,7 +4079,7 @@ sb.auth.onAuthStateChange((event, session) => {
   updateAuthUI();
   if (isGenuineNewSignIn) {
     attemptSilentSignIn();
-    loadSubscriptionStatus().then(() => updateUserStatusUI());
+    ensureAppAccess().then(() => loadSubscriptionStatus()).then(() => updateUserStatusUI());
     renderLibraryView();
   }
 });
