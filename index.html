@@ -731,6 +731,8 @@
     text-decoration: none;
   }
   .key-manage-link a:hover { color: var(--brass); }
+  .key-manage-link a.key-asterisk { font-size: 13px; padding: 0 2px; opacity: 0.7; }
+  .key-note { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--shell-text-dim); margin-bottom: 12px; }
 
   .field { margin-bottom: 14px; }
 
@@ -1781,6 +1783,10 @@ function performUndo() {
 // editable fields in the UI.
 const CHORDS_WORKFLOW_SLUG = 'untitled-workflow-40fd1d9';
 const SECTIONS_WORKFLOW_SLUG = 'untitled-workflow-40fe1ea';
+// Combined workflow: one job returns chords map, root key, beat map, bpm AND sections.
+// When this is set, the two older workflows above are not used at all.
+// Paste the new workflow's slug between the quotes. Leave '' to use the old two-job setup.
+const COMBINED_WORKFLOW_SLUG = 'untitled-workflow-46188d3';
 
 // Music AI API key -- saved in localStorage so it's entered once, then
 // never shown or re-typed again. Unlike the Google token (deliberately
@@ -2062,7 +2068,7 @@ async function processAudioViaRelay(chordsWorkflowSlug, sectionsWorkflowSlug, fi
   if (!putResp.ok) throw new Error(`File upload failed: HTTP ${putResp.status}`);
 
   logFn('Submitting chords & beats job...');
-  const chordsJob = await relayCall('submit-job', { workflow: chordsWorkflowSlug, inputUrl: downloadUrl, name: 'Nashville chart' });
+  const chordsJob = await relayCall('submit-job', { workflow: COMBINED_WORKFLOW_SLUG || chordsWorkflowSlug, inputUrl: downloadUrl, name: 'Nashville chart' });
   logFn(`Chords job submitted: ${chordsJob.id}. Waiting...`);
 
   const chordsResult = await relayPollAndGetResult(chordsJob.id, logFn);
@@ -2079,7 +2085,15 @@ async function processAudioViaRelay(chordsWorkflowSlug, sectionsWorkflowSlug, fi
   logFn(`Got ${downbeats.length} downbeats.`);
 
   let sectionsData = null;
-  if (sectionsWorkflowSlug) {
+  if (COMBINED_WORKFLOW_SLUG) {
+    try {
+      sectionsData = await (await fetch(chordsResult.sections)).json();
+      logFn(`Got ${sectionsData.length} structural segments.`);
+    } catch (err) {
+      logFn(`Sections missing from result (${err.message}) -- continuing with one "Song" section.`);
+      sectionsData = null;
+    }
+  } else if (sectionsWorkflowSlug) {
     try {
       logFn('Re-uploading for sections job...');
       const { uploadUrl: uploadUrl2, downloadUrl: downloadUrl2 } = await relayUploadFile();
@@ -2124,7 +2138,7 @@ async function processAudioWithMusicAi(apiKey, chordsWorkflowSlug, sectionsWorkf
   const chordsJobResp = await fetch('https://api.music.ai/v1/job', {
     method: 'POST',
     headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Nashville chart', workflow: chordsWorkflowSlug, params: { inputUrl: downloadUrl } })
+    body: JSON.stringify({ name: 'Nashville chart', workflow: COMBINED_WORKFLOW_SLUG || chordsWorkflowSlug, params: { inputUrl: downloadUrl } })
   });
   if (!chordsJobResp.ok) {
     const text = await chordsJobResp.text();
@@ -2147,7 +2161,15 @@ async function processAudioWithMusicAi(apiKey, chordsWorkflowSlug, sectionsWorkf
   logFn(`Got ${downbeats.length} downbeats.`);
 
   let sectionsData = null;
-  if (sectionsWorkflowSlug) {
+  if (COMBINED_WORKFLOW_SLUG) {
+    try {
+      sectionsData = await (await fetch(chordsResult.sections)).json();
+      logFn(`Got ${sectionsData.length} structural segments.`);
+    } catch (err) {
+      logFn(`Sections missing from result (${err.message}) -- continuing with one "Song" section.`);
+      sectionsData = null;
+    }
+  } else if (sectionsWorkflowSlug) {
     try {
       logFn('Re-uploading for sections job (upload URLs are one-time-use)...');
       const downloadUrl2 = await musicaiUploadFile(apiKey, file, logFn);
@@ -2846,7 +2868,11 @@ async function renderUploadView() {
   setActiveTab('new');
 
   const eligibility = await checkManagedEligibility();
-  const useManagedMode = eligibility.eligible;
+  // Someone who has saved their own Music AI key always uses it first, so
+  // their charts never touch your key or their plan allowance.
+  let useManagedMode = eligibility.eligible && !getStoredApiKey();
+  // The key box is already open when there is no plan/trial and no saved key.
+  const apiKeySetupShownAtStart = !useManagedMode && !getStoredApiKey();
 
   // Only shown when something needs the person's attention -- when
   // everything's fine (subscribed or trial available), just let them use
@@ -2874,8 +2900,11 @@ async function renderUploadView() {
             <label for="musicAiKeySetup">Music AI API Key (saved once, never shown again)</label>
             <input type="password" id="musicAiKeySetup" placeholder="paste your key">
           </div>
+          <div class="key-note">Charts made with your own key don't count against any plan.</div>
           <div class="btn-row">
             <button class="shell-btn" id="saveKeyBtn">Save Key</button>
+            ${(eligibility.eligible || getStoredApiKey()) ? '<button class="shell-btn secondary" id="cancelKeyBtn">Cancel</button>' : ''}
+            ${getStoredApiKey() ? '<button class="shell-btn secondary" id="removeKeyBtn">Remove saved key</button>' : ''}
           </div>
         </div>
 
@@ -2900,8 +2929,10 @@ async function renderUploadView() {
 
         <div class="process-log" id="processLog" style="display:none"></div>
         <div id="processErrorMsg"></div>
-        <div class="key-manage-link" id="keyManageLink" style="display:${!useManagedMode && getStoredApiKey() ? 'block' : 'none'}">
-          <a href="#" id="changeKeyLink">Change API key</a>
+        <div class="key-manage-link" id="keyManageLink" style="display:${apiKeySetupShownAtStart ? 'none' : 'block'}">
+          ${getStoredApiKey()
+            ? '<a href="#" id="changeKeyLink">Change API key</a>'
+            : '<a href="#" id="changeKeyLink" class="key-asterisk" title="Have your own Music AI key? Click to use it instead.">*</a>'}
         </div>
       </div>
     </div>
@@ -2951,9 +2982,15 @@ async function renderUploadView() {
     const key = musicAiKeySetupInput.value.trim();
     if (!key) return;
     setStoredApiKey(key);
+    useManagedMode = false;
     musicAiKeySetupInput.value = '';
-    showDropZone();
+    renderUploadView();
   });
+
+  const cancelKeyBtn = document.getElementById('cancelKeyBtn');
+  if (cancelKeyBtn) cancelKeyBtn.addEventListener('click', () => renderUploadView());
+  const removeKeyBtn = document.getElementById('removeKeyBtn');
+  if (removeKeyBtn) removeKeyBtn.addEventListener('click', () => { clearStoredApiKey(); renderUploadView(); });
 
   changeKeyLink.addEventListener('click', (e) => {
     e.preventDefault();
