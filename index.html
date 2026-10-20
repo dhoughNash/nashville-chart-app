@@ -2939,7 +2939,7 @@ async function renderUploadView() {
   // Only shown when something needs the person's attention -- when
   // everything's fine (subscribed or trial available), just let them use
   // the drop zone without narrating it.
-  const managedBannerHtml = useManagedMode
+  const managedBannerHtml = eligibility.eligible
     ? ''
     : `<div class="managed-banner managed-banner-off">No active subscription and your free trial is used. <a href="#" id="goToPlansLink">Subscribe</a>, or use your own Music AI key below.</div>`;
 
