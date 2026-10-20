@@ -1336,6 +1336,46 @@
   }
   .help-close:hover { color: var(--shell-text); }
 
+  /* --- pre-process heads-up pop-up --- */
+  .heads-up-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 4, 8, 0.78);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    padding: 16px;
+    z-index: 1100;
+  }
+  .heads-up-overlay.open { display: flex; }
+  .heads-up-panel {
+    width: 100%;
+    max-width: 440px;
+    background: var(--shell-panel);
+    border: 1px solid var(--shell-edge);
+    border-left: 3px solid var(--brass);
+    border-radius: 12px;
+    padding: 26px 28px 24px;
+  }
+  .heads-up-panel h2 {
+    font-family: 'Architects Daughter', cursive;
+    font-weight: 400;
+    font-size: 26px;
+    color: var(--brass);
+    margin: 0 0 14px;
+  }
+  .heads-up-panel p { margin: 0 0 12px; font-size: 15px; line-height: 1.55; color: var(--shell-text); }
+  .heads-up-actions { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 20px; }
+  .heads-up-cancel {
+    background: transparent;
+    border: none;
+    color: var(--shell-text-dim);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px 10px;
+  }
+  .heads-up-cancel:hover { color: var(--shell-text); }
+
   .help-panel h2 {
     font-family: 'Architects Daughter', cursive;
     font-weight: 400;
@@ -1591,6 +1631,18 @@
   </nav>
 
   <div id="viewContainer"></div>
+
+  <div class="heads-up-overlay" id="headsUpOverlay" role="dialog" aria-modal="true" aria-labelledby="headsUpTitle">
+    <div class="heads-up-panel">
+      <h2 id="headsUpTitle">Quick heads up</h2>
+      <p>I understand that Music.ai is going to do its best to analyze this recording, and I'll double-check the results, because sometimes it can get a little wonky, especially with complex patterns.</p>
+      <p>I also understand that the cleaner the recording, the better the result.</p>
+      <div class="heads-up-actions">
+        <button class="heads-up-cancel" id="headsUpCancel" type="button">Not yet</button>
+        <button class="shell-btn" id="headsUpGo" type="button">Let's do this!</button>
+      </div>
+    </div>
+  </div>
 
   <div class="save-toast" id="saveToast">Saved to library</div>
   <div style="text-align:center;padding:24px 0 36px;font-size:12px;"><a href="/privacy.html" style="color:#A69C66;margin:0 10px;">Privacy Policy</a><a href="/terms.html" style="color:#A69C66;margin:0 10px;">Terms of Service</a></div>
@@ -3040,7 +3092,34 @@ async function renderUploadView() {
     setSelectedFile(file);
   });
 
-  processBtn.addEventListener('click', async () => {
+  // Heads-up pop-up: shown after the checks pass, before anything is sent
+  // to Music.ai. Nothing starts until "Let's do this!" is clicked.
+  const headsUpOverlay = document.getElementById('headsUpOverlay');
+  const headsUpGo = document.getElementById('headsUpGo');
+  const headsUpCancel = document.getElementById('headsUpCancel');
+  function closeHeadsUp() { headsUpOverlay.classList.remove('open'); }
+
+  processBtn.addEventListener('click', () => {
+    clearProcessError();
+    processLog.innerHTML = '';
+    processLog.style.display = 'none';
+
+    const audioFile = audioFileInput.files[0];
+    if (!audioFile) { showProcessError('Choose an audio file first.'); return; }
+
+    if (!useManagedMode && !getStoredApiKey()) {
+      showKeySetup(); showProcessError('Enter your Music AI API key first.'); return;
+    }
+
+    headsUpOverlay.classList.add('open');
+    headsUpGo.focus();
+  });
+
+  headsUpCancel.onclick = closeHeadsUp;
+  headsUpOverlay.onclick = (e) => { if (e.target === headsUpOverlay) closeHeadsUp(); };
+  headsUpGo.onclick = () => { closeHeadsUp(); startProcessing(); };
+
+  async function startProcessing() {
     clearProcessError();
     processLog.innerHTML = '';
     processLog.style.display = 'none';
@@ -3087,8 +3166,12 @@ async function renderUploadView() {
       processBtn.style.display = '';
       document.getElementById('processingIndicator').style.display = 'none';
     }
-  });
+  }
 }
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.getElementById('headsUpOverlay').classList.remove('open');
+});
 
 // ---------- chart view (rendering + editing) ----------
 
