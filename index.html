@@ -1589,34 +1589,50 @@
     /* Second pass: the numbers still had slack around them, so the page
        margin, label column and inter-column gaps are trimmed to hand that
        width to the numbers themselves. */
-    @page { margin: 0.6in; }
+    @page { margin: 0.5in; }
 
-    .section-label-col { width: 62px; }
+    .section-label-col { width: 58px; }
     .section-bars {
-      grid-template-columns: repeat(4, minmax(0, 1fr)) 10px repeat(4, minmax(0, 1fr));
-      column-gap: 6px;
-      row-gap: 16px;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) 8px repeat(4, minmax(0, 1fr));
+      column-gap: 4px;
+      row-gap: 10px;
     }
-    .section-row { margin-bottom: 22px; padding-top: 14px; }
+    .section-row { margin-bottom: 16px; padding-top: 10px; }
 
     /* numeric groups only (inline gap is 14px); chord-name groups keep
        their own tighter inline gaps so letters don't collide */
     .bar-group[style*="gap:14px"] { gap: 8px !important; }
 
-    .bar-single { font-size: 44px; }
-    .section-label { font-size: 22px; }
-    .title-text { font-size: 34px; }
+    /* Number view: columns are ~80px wide and a numeral is only ~half its
+       font size wide, so there is room to go much bigger. */
+    .bar-single { font-size: 68px; }
+    .section-label { font-size: 24px; }
+    .title-text { font-size: 36px; }
     .kt-chip .kt-value, .kt-select { font-size: 20px; }
-    .bar-diamond { width: 64px; height: 64px; }
-    .bar-diamond span { font-size: 34px; }
-    .bar-diamond.bar-diamond-group { width: 46px; height: 46px; }
-    .bar-diamond.bar-diamond-group span { font-size: 25px; }
-    .bar-box { width: 38px; height: 56px; }
-    .bar-box span { font-size: 22px; }
-    .bar-split { width: 30px; height: 30px; }
-    .bar-split .split-top, .bar-split .split-bottom { font-size: 15px; max-width: 28px; }
-    .bar-split.wide { width: 36px; height: 36px; }
-    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 16px; max-width: 34px; }
+    .bar-diamond { width: 78px; height: 78px; }
+    .bar-diamond span { font-size: 42px; }
+    .bar-diamond.bar-diamond-group { width: 56px; height: 56px; }
+    .bar-diamond.bar-diamond-group span { font-size: 30px; }
+    .bar-box { width: 46px; height: 68px; }
+    .bar-box span { font-size: 28px; }
+    .bar-split { width: 38px; height: 38px; }
+    .bar-split .split-top, .bar-split .split-bottom { font-size: 20px; max-width: 36px; }
+    .bar-split.wide { width: 44px; height: 44px; }
+    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 20px; max-width: 42px; }
+
+    /* Chord-name view: letters like "G#m7" are 3-4x wider than a numeral,
+       so keep the previous, smaller sizes to avoid collisions. */
+    .chords-mode .bar-single { font-size: 44px; }
+    .chords-mode .bar-diamond { width: 64px; height: 64px; }
+    .chords-mode .bar-diamond span { font-size: 34px; }
+    .chords-mode .bar-diamond.bar-diamond-group { width: 46px; height: 46px; }
+    .chords-mode .bar-diamond.bar-diamond-group span { font-size: 25px; }
+    .chords-mode .bar-box { width: 38px; height: 56px; }
+    .chords-mode .bar-box span { font-size: 22px; }
+    .chords-mode .bar-split { width: 30px; height: 30px; }
+    .chords-mode .bar-split .split-top, .chords-mode .bar-split .split-bottom { font-size: 15px; max-width: 28px; }
+    .chords-mode .bar-split.wide { width: 36px; height: 36px; }
+    .chords-mode .bar-split.wide .split-top, .chords-mode .bar-split.wide .split-bottom { font-size: 16px; max-width: 34px; }
   }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -4183,7 +4199,7 @@ function renderChartView(data) {
           <button class="tool-btn${activeMarkTool === 'arrowup' ? ' active' : ''}" data-tool="arrowup" title="Energy up (start of section)">&#8593;</button>
         </div>
       ` : ''}
-      <div class="sheet${activeMarkTool ? ' tool-active' : ''}" id="sheet"></div>
+      <div class="sheet${activeMarkTool ? ' tool-active' : ''}${displayMode === 'chords' ? ' chords-mode' : ''}" id="sheet"></div>
     </div>
   `;
 
