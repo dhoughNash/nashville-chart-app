@@ -1586,16 +1586,37 @@
        reclaim that, it just redistributes where the leftover space sits).
        The lever that actually works is making the numbers themselves
        bigger, since there's genuine room to grow into on the page. */
-    .bar-single { font-size: 34px; }
-    .section-label { font-size: 20px; }
-    .title-text { font-size: 32px; }
-    .kt-chip .kt-value, .kt-select { font-size: 19px; }
-    .bar-diamond { width: 52px; height: 52px; }
-    .bar-diamond span { font-size: 27px; }
-    .bar-diamond.bar-diamond-group { width: 40px; height: 40px; }
-    .bar-diamond.bar-diamond-group span { font-size: 21px; }
-    .bar-box { width: 30px; height: 46px; }
-    .bar-box span { font-size: 17px; }
+    /* Second pass: the numbers still had slack around them, so the page
+       margin, label column and inter-column gaps are trimmed to hand that
+       width to the numbers themselves. */
+    @page { margin: 0.6in; }
+
+    .section-label-col { width: 62px; }
+    .section-bars {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) 10px repeat(4, minmax(0, 1fr));
+      column-gap: 6px;
+      row-gap: 16px;
+    }
+    .section-row { margin-bottom: 22px; padding-top: 14px; }
+
+    /* numeric groups only (inline gap is 14px); chord-name groups keep
+       their own tighter inline gaps so letters don't collide */
+    .bar-group[style*="gap:14px"] { gap: 8px !important; }
+
+    .bar-single { font-size: 44px; }
+    .section-label { font-size: 22px; }
+    .title-text { font-size: 34px; }
+    .kt-chip .kt-value, .kt-select { font-size: 20px; }
+    .bar-diamond { width: 64px; height: 64px; }
+    .bar-diamond span { font-size: 34px; }
+    .bar-diamond.bar-diamond-group { width: 46px; height: 46px; }
+    .bar-diamond.bar-diamond-group span { font-size: 25px; }
+    .bar-box { width: 38px; height: 56px; }
+    .bar-box span { font-size: 22px; }
+    .bar-split { width: 30px; height: 30px; }
+    .bar-split .split-top, .bar-split .split-bottom { font-size: 15px; max-width: 28px; }
+    .bar-split.wide { width: 36px; height: 36px; }
+    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 16px; max-width: 34px; }
   }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
