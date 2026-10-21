@@ -1593,14 +1593,17 @@
 
     .section-label-col { width: 58px; }
     .section-bars {
-      /* THE setting for space between numbers: each bar sits in a column of
-         this fixed width (was 1fr = stretched to fill the whole page). Space
-         between two numerals = column width minus numeral width. Make the
-         50px smaller for tighter, larger for looser. */
-      grid-template-columns: repeat(4, 50px) 10px repeat(4, 50px);
+      /* THE settings for space between numbers: the columns share the
+         page width evenly (1fr), every numeral is centered in its column,
+         and the side padding below sets the left/right margins of the
+         chart. More padding = numbers pulled closer together; less =
+         spread further apart. */
+      grid-template-columns: repeat(4, minmax(0, 1fr)) 12px repeat(4, minmax(0, 1fr));
       column-gap: 0;
       row-gap: 10px;
-      justify-content: start;
+      box-sizing: border-box;
+      padding: 0 40px;
+      justify-content: stretch;
     }
     /* bars were pinned to the left (first 4) / right (last 4) edge of their
        column, which doubled the visible gap -- center them in print */
