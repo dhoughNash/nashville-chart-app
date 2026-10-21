@@ -1593,11 +1593,19 @@
 
     .section-label-col { width: 58px; }
     .section-bars {
-      grid-template-columns: repeat(4, minmax(0, 1fr)) 8px repeat(4, minmax(0, 1fr));
-      column-gap: 4px;
+      /* THE setting for space between numbers: each bar sits in a column of
+         this fixed width (was 1fr = stretched to fill the whole page). Space
+         between two numerals = column width minus numeral width. Make the
+         70px smaller for tighter, larger for looser. */
+      grid-template-columns: repeat(4, 70px) 12px repeat(4, 70px);
+      column-gap: 0;
       row-gap: 10px;
+      justify-content: center;
     }
-    .section-row { margin-bottom: 16px; padding-top: 10px; }
+    /* bars were pinned to the left (first 4) / right (last 4) edge of their
+       column, which doubled the visible gap -- center them in print */
+    .sheet:not(.chords-mode) .section-bars > .bar-wrap { justify-self: center !important; }
+    .section-row { margin-bottom: 16px; padding-top: 10px; break-inside: avoid; page-break-inside: avoid; }
 
     /* numeric groups only (inline gap is 14px); chord-name groups keep
        their own tighter inline gaps so letters don't collide */
@@ -1605,16 +1613,16 @@
 
     /* Number view: columns are ~80px wide and a numeral is only ~half its
        font size wide, so there is room to go much bigger. */
-    .bar-single { font-size: 68px; }
+    .bar-single { font-size: 76px; }
     .section-label { font-size: 24px; }
     .title-text { font-size: 36px; }
     .kt-chip .kt-value, .kt-select { font-size: 20px; }
-    .bar-diamond { width: 78px; height: 78px; }
-    .bar-diamond span { font-size: 42px; }
-    .bar-diamond.bar-diamond-group { width: 56px; height: 56px; }
-    .bar-diamond.bar-diamond-group span { font-size: 30px; }
-    .bar-box { width: 46px; height: 68px; }
-    .bar-box span { font-size: 28px; }
+    .bar-diamond { width: 70px; height: 70px; }
+    .bar-diamond span { font-size: 38px; }
+    .bar-diamond.bar-diamond-group { width: 52px; height: 52px; }
+    .bar-diamond.bar-diamond-group span { font-size: 28px; }
+    .bar-box { width: 42px; height: 62px; }
+    .bar-box span { font-size: 25px; }
     .bar-split { width: 38px; height: 38px; }
     .bar-split .split-top, .bar-split .split-bottom { font-size: 20px; max-width: 36px; }
     .bar-split.wide { width: 44px; height: 44px; }
@@ -1622,6 +1630,7 @@
 
     /* Chord-name view: letters like "G#m7" are 3-4x wider than a numeral,
        so keep the previous, smaller sizes to avoid collisions. */
+    .chords-mode .section-bars { grid-template-columns: repeat(4, minmax(0, 1fr)) 8px repeat(4, minmax(0, 1fr)); column-gap: 4px; }
     .chords-mode .bar-single { font-size: 44px; }
     .chords-mode .bar-diamond { width: 64px; height: 64px; }
     .chords-mode .bar-diamond span { font-size: 34px; }
@@ -4404,32 +4413,12 @@ function renderChartView(data) {
   });
 }
 
-// ---------- auto-condense to one printed page ----------
-// @page margins only define the printable area -- they don't shrink content
-// that's taller than one page. This measures the actual rendered chart
-// height right before printing and scales it down to fit, using `zoom`
-// (not `transform`) because zoom genuinely resizes the box in the layout
-// engine, which is what the print pagination logic actually reads --
-// transform only changes the visual appearance after layout, so it
-// wouldn't affect how many pages the browser decides to print.
-const PRINT_PAGE_HEIGHT_BUDGET_PX = 820; // conservative estimate for one page at 1in margins
-const PRINT_MIN_ZOOM = 0.45; // floor so extremely long charts don't shrink to unreadable
-
-window.addEventListener('beforeprint', () => {
-  const sheet = document.getElementById('sheet');
-  if (!sheet) return;
-  sheet.style.zoom = '1';
-  const naturalHeight = sheet.scrollHeight;
-  if (naturalHeight > PRINT_PAGE_HEIGHT_BUDGET_PX) {
-    const scale = Math.max(PRINT_MIN_ZOOM, PRINT_PAGE_HEIGHT_BUDGET_PX / naturalHeight);
-    sheet.style.zoom = String(scale);
-  }
-});
-
-window.addEventListener('afterprint', () => {
-  const sheet = document.getElementById('sheet');
-  if (sheet) sheet.style.zoom = '';
-});
+// ---------- printing ----------
+// The old "auto-condense to one page" zoom was removed: it measured the
+// on-screen layout and shrank the whole chart to fit one page, which
+// cancelled out the larger print numerals. Charts now print at full size
+// and flow onto extra pages when needed (section rows never split across
+// a page break -- see the @media print rules).
 
 // Ctrl+Z (Windows/Linux) or Cmd+Z (Mac) triggers undo, but only while
 // actively editing a chart -- and never while focus is inside a
