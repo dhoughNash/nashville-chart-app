@@ -1617,7 +1617,7 @@
     /* Number view: columns are ~80px wide and a numeral is only ~half its
        font size wide, so there is room to go much bigger. */
     .bar-single { font-size: 26px; }
-    .section-label { font-size: 24px; }
+    .section-label { font-size: 18px; white-space: nowrap; }
     .title-text { font-size: 36px; }
     .kt-chip .kt-value, .kt-select { font-size: 20px; }
     .bar-diamond { width: 36px; height: 36px; }
@@ -1702,7 +1702,7 @@
   </div>
 
   <div class="save-toast" id="saveToast">Saved to library</div>
-  <div style="text-align:center;padding:24px 0 36px;font-size:12px;"><a href="/privacy.html" style="color:#A69C66;margin:0 10px;">Privacy Policy</a><a href="/terms.html" style="color:#A69C66;margin:0 10px;">Terms of Service</a></div>
+  <div class="no-print" style="text-align:center;padding:24px 0 36px;font-size:12px;"><a href="/privacy.html" style="color:#A69C66;margin:0 10px;">Privacy Policy</a><a href="/terms.html" style="color:#A69C66;margin:0 10px;">Terms of Service</a></div>
 
   <div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="help-panel">
@@ -4424,12 +4424,61 @@ function renderChartView(data) {
   });
 }
 
-// ---------- printing ----------
-// The old "auto-condense to one page" zoom was removed: it measured the
-// on-screen layout and shrank the whole chart to fit one page, which
-// cancelled out the larger print numerals. Charts now print at full size
-// and flow onto extra pages when needed (section rows never split across
-// a page break -- see the @media print rules).
+// ---------- print: fit to one page ----------
+// Charts print at full size, then get zoomed down only as much as needed
+// to fit one page. The height is measured against the real print layout:
+// right before printing, the @media print rules are copied into a
+// temporary plain <style> (so they apply on screen), the sheet is set to
+// the printable page width, measured, and everything is put back -- all
+// synchronously, so nothing flashes. (The old version measured the
+// on-screen layout, which has nothing to do with how tall the printed
+// chart is, so it shrank everything far too much.)
+const PRINT_PAGE_WIDTH_PX = 720;          // letter, 0.5in margins: 7.5in x 96
+const PRINT_PAGE_HEIGHT_BUDGET_PX = 920;  // letter, 0.5in margins: 10in x 96, minus a little safety
+const PRINT_MIN_ZOOM = 0.5;               // floor so very long charts stay readable
+
+function measurePrintHeight(sheet) {
+  let css = '';
+  for (const ss of document.styleSheets) {
+    let rules;
+    try { rules = ss.cssRules; } catch (e) { continue; }
+    for (const r of rules) {
+      if (r.type === CSSRule.MEDIA_RULE && /print/.test(r.media.mediaText)) {
+        for (const inner of r.cssRules) {
+          if (inner.type === CSSRule.STYLE_RULE) css += inner.cssText + '\n';
+        }
+      }
+    }
+  }
+  const tmp = document.createElement('style');
+  tmp.textContent = css;
+  document.head.appendChild(tmp);
+  const prevWidth = sheet.style.width;
+  try {
+    sheet.style.zoom = '1';
+    sheet.style.width = PRINT_PAGE_WIDTH_PX + 'px';
+    return sheet.getBoundingClientRect().height;
+  } finally {
+    sheet.style.width = prevWidth;
+    tmp.remove();
+  }
+}
+
+window.addEventListener('beforeprint', () => {
+  const sheet = document.getElementById('sheet');
+  if (!sheet) return;
+  let natural = 0;
+  try { natural = measurePrintHeight(sheet); } catch (e) { natural = 0; }
+  sheet.style.zoom = '1';
+  if (natural > PRINT_PAGE_HEIGHT_BUDGET_PX) {
+    sheet.style.zoom = String(Math.max(PRINT_MIN_ZOOM, PRINT_PAGE_HEIGHT_BUDGET_PX / natural));
+  }
+});
+
+window.addEventListener('afterprint', () => {
+  const sheet = document.getElementById('sheet');
+  if (sheet) sheet.style.zoom = '';
+});
 
 // Ctrl+Z (Windows/Linux) or Cmd+Z (Mac) triggers undo, but only while
 // actively editing a chart -- and never while focus is inside a
