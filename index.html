@@ -1829,6 +1829,7 @@ function snapshotForUndo() {
   if (!currentData) return;
   undoStack.push(JSON.stringify(currentData));
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
+  scheduleAutosave(); // every edit action snapshots first, so this is the one hook for autosave
 }
 
 function performUndo() {
@@ -1837,6 +1838,7 @@ function performUndo() {
     return;
   }
   currentData = JSON.parse(undoStack.pop());
+  scheduleAutosave();
   renderChartView(currentData);
   showToast('Undid last change');
 }
@@ -2390,21 +2392,38 @@ const DEMO = {
 };
 
 // ---------- Google Drive sign-in ----------
+// Authorization-code flow. The person signs in with Google ONCE; a Netlify
+// function (google-drive-token) trades the one-time code for a long-lived
+// refresh token and keeps it server-side in Supabase. From then on the
+// browser just asks that function for a fresh 1-hour access token whenever
+// it needs one, so Drive stays connected without any re-login (and it works
+// on any device the person logs into).
 
 const GOOGLE_CLIENT_ID = '451996104682-kj3dmo065dt1e4jh8to95j3etj473g6q.apps.googleusercontent.com';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_TOKEN_FN = '/.netlify/functions/google-drive-token';
 
 let driveAccessToken = null;
 let driveSignedIn = false;
-let googleTokenClient = null;
+let driveTokenExpiresAt = 0;   // ms timestamp when the current access token dies
+let googleCodeClient = null;
+let driveRefreshPromise = null;
 
-let isSilentSignInAttempt = false;
+// "wanted" = this person has Drive connected, so saves must go to Drive (or
+// be held safely on this device) and never silently fall back to a
+// browser-only copy that Drive would never see.
+function driveWanted() {
+  try { return localStorage.getItem('driveWanted') === '1'; } catch (e) { return false; }
+}
+function setDriveWanted(on) {
+  try {
+    if (on) localStorage.setItem('driveWanted', '1');
+    else localStorage.removeItem('driveWanted');
+  } catch (e) {}
+}
 
-// The token itself is genuinely short-lived (~1hr) by Google's own design
-// for browser-only apps -- no refresh token is issued, on purpose, so a
-// leaked token can't be used forever. Storing it lets it survive tab
-// closes/reloads for the rest of its real lifetime, rather than requiring
-// a fresh sign-in on every single page load.
+// A still-valid access token can survive a page reload for the rest of its
+// life; the refresh token never touches the browser.
 function getStoredDriveToken() {
   try {
     const raw = localStorage.getItem('driveTokenData');
@@ -2414,91 +2433,160 @@ function getStoredDriveToken() {
       localStorage.removeItem('driveTokenData');
       return null;
     }
-    return data.token;
+    return { token: data.token, expiresAt: data.expiresAt };
   } catch (e) {
     return null;
   }
 }
-function setStoredDriveToken(token, expiresInSeconds) {
-  try {
-    const expiresAt = Date.now() + (expiresInSeconds * 1000) - 60000; // 1-min safety buffer
-    localStorage.setItem('driveTokenData', JSON.stringify({ token, expiresAt }));
-  } catch (e) {}
+function setStoredDriveToken(token, expiresAt) {
+  try { localStorage.setItem('driveTokenData', JSON.stringify({ token, expiresAt })); } catch (e) {}
 }
 function clearStoredDriveToken() {
   try { localStorage.removeItem('driveTokenData'); } catch (e) {}
 }
 
-function initGoogleAuth() {
-  if (googleTokenClient || typeof google === 'undefined') return;
-  googleTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: DRIVE_SCOPE,
-    callback: (tokenResponse) => {
-      if (tokenResponse.error) {
-        if (!isSilentSignInAttempt) {
-          showToast('Google sign-in failed: ' + tokenResponse.error);
-        }
-        isSilentSignInAttempt = false;
-        return;
-      }
-      isSilentSignInAttempt = false;
-      driveAccessToken = tokenResponse.access_token;
-      driveSignedIn = true;
-      setStoredDriveToken(tokenResponse.access_token, tokenResponse.expires_in || 3600);
-      showToast('Signed in with Google');
-      updateAuthUI();
-      if (document.getElementById('libraryContent')) renderLibraryView();
+async function driveFnCall(action, params) {
+  const { data: sessionData } = await sb.auth.getSession();
+  const session = sessionData && sessionData.session;
+  if (!session) throw new Error('Your login expired. Please log in again.');
+  const resp = await fetch(DRIVE_TOKEN_FN, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
     },
+    body: JSON.stringify({ action, ...params }),
   });
-}
-
-function attemptSilentSignIn() {
-  // Check for a still-valid stored token first -- if we have one, this is
-  // instant, no network round-trip, no popup, no third-party-cookie
-  // dependence at all.
-  const stored = getStoredDriveToken();
-  if (stored) {
-    driveAccessToken = stored;
-    driveSignedIn = true;
-    updateAuthUI();
-    if (document.getElementById('libraryContent')) renderLibraryView();
-    return;
+  let data = {};
+  try { data = await resp.json(); } catch (e) {}
+  if (!resp.ok) {
+    const err = new Error(data.error || `HTTP ${resp.status}`);
+    err.code = data.code || '';
+    err.status = resp.status;
+    throw err;
   }
-
-  let attempts = 0;
-  const maxAttempts = 30;
-  const tryInit = () => {
-    attempts++;
-    if (typeof google !== 'undefined' && google.accounts) {
-      initGoogleAuth();
-      if (googleTokenClient) {
-        isSilentSignInAttempt = true;
-        googleTokenClient.requestAccessToken({ prompt: '' });
-      }
-      return;
-    }
-    if (attempts < maxAttempts) {
-      setTimeout(tryInit, 100);
-    }
-  };
-  tryInit();
+  return data;
 }
 
-function signInWithGoogle() {
-  if (!googleTokenClient) initGoogleAuth();
-  if (googleTokenClient) googleTokenClient.requestAccessToken();
+function rerenderLibraryIfOpen() {
+  if (document.getElementById('libraryContent')) renderLibraryView();
 }
 
-function signOutGoogle() {
-  if (driveAccessToken && typeof google !== 'undefined') {
-    google.accounts.oauth2.revoke(driveAccessToken, () => {});
-  }
+function applyDriveToken(token, expiresInSeconds) {
+  const expiresAt = Date.now() + (expiresInSeconds * 1000) - 60000; // 1-min safety buffer
+  driveAccessToken = token;
+  driveTokenExpiresAt = expiresAt;
+  driveSignedIn = true;
+  setStoredDriveToken(token, expiresAt);
+  setDriveWanted(true);
+  updateAuthUI();
+}
+
+function markDriveDisconnected(announce) {
   driveAccessToken = null;
+  driveTokenExpiresAt = 0;
   driveSignedIn = false;
   clearStoredDriveToken();
   updateAuthUI();
-  if (document.getElementById('libraryContent')) renderLibraryView();
+  if (announce) {
+    showToast('Google Drive needs to be reconnected (account menu). Your work is kept on this device.');
+  }
+}
+
+// Mints a fresh access token from the server-held refresh token. Concurrent
+// callers share one request. Returns true on success.
+function refreshDriveToken() {
+  if (driveRefreshPromise) return driveRefreshPromise;
+  driveRefreshPromise = (async () => {
+    try {
+      const r = await driveFnCall('refresh', {});
+      applyDriveToken(r.access_token, r.expires_in);
+      return true;
+    } catch (e) {
+      if (e.code === 'reconnect_required') {
+        markDriveDisconnected(true);
+      } else if (e.code === 'not_connected') {
+        // Never connected (or disconnected on purpose) -- nothing to do.
+        if (driveSignedIn) markDriveDisconnected(false);
+      }
+      // Any other failure (offline, Google hiccup) is temporary: keep state
+      // and let the caller retry later.
+      return false;
+    } finally {
+      driveRefreshPromise = null;
+    }
+  })();
+  return driveRefreshPromise;
+}
+
+// Call before any Drive request. Refreshes quietly if the token is missing
+// or within 2 minutes of expiring.
+async function ensureDriveToken() {
+  if (driveAccessToken && Date.now() < driveTokenExpiresAt - 120000) return true;
+  const ok = await refreshDriveToken();
+  if (ok) return true;
+  return !!(driveAccessToken && Date.now() < driveTokenExpiresAt);
+}
+
+function initGoogleAuth() {
+  if (googleCodeClient || typeof google === 'undefined' || !google.accounts) return;
+  googleCodeClient = google.accounts.oauth2.initCodeClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    ux_mode: 'popup',
+    callback: async (resp) => {
+      if (resp.error || !resp.code) {
+        showToast('Google sign-in failed: ' + (resp.error || 'no code returned'));
+        return;
+      }
+      try {
+        const r = await driveFnCall('exchange', { code: resp.code });
+        applyDriveToken(r.access_token, r.expires_in);
+        showToast('Google Drive connected');
+        rerenderLibraryIfOpen();
+        flushPendingSave();
+      } catch (e) {
+        showToast(e.code === 'retry_connect'
+          ? 'Almost there -- click Connect Google Drive once more to finish.'
+          : 'Google sign-in failed: ' + e.message);
+      }
+    },
+    error_callback: () => { /* popup closed or blocked -- nothing to report */ },
+  });
+}
+
+async function attemptSilentSignIn() {
+  // 1. A still-valid stored access token: instant, no network.
+  const stored = getStoredDriveToken();
+  if (stored) {
+    driveAccessToken = stored.token;
+    driveTokenExpiresAt = stored.expiresAt;
+    driveSignedIn = true;
+    setDriveWanted(true);
+    updateAuthUI();
+    rerenderLibraryIfOpen();
+    if (stored.expiresAt - Date.now() > 120000) return;
+  }
+  // 2. Otherwise (or if it's about to die) ask the server for a fresh one.
+  //    Silent for people who never connected Drive ('not_connected').
+  const ok = await refreshDriveToken();
+  if (ok) {
+    rerenderLibraryIfOpen();
+    flushPendingSave();
+  }
+}
+
+function signInWithGoogle() {
+  if (!googleCodeClient) initGoogleAuth();
+  if (googleCodeClient) googleCodeClient.requestCode();
+  else showToast('Google sign-in is still loading -- try again in a second.');
+}
+
+async function signOutGoogle() {
+  try { await driveFnCall('disconnect', {}); } catch (e) { console.error(e); }
+  setDriveWanted(false);
+  markDriveDisconnected(false);
+  rerenderLibraryIfOpen();
 }
 
 function updateAuthUI() {
@@ -2515,17 +2603,136 @@ function updateAuthUI() {
   if (signOutBtn) signOutBtn.addEventListener('click', signOutGoogle);
 }
 
-async function driveApiFetch(url, options = {}) {
+async function driveApiFetch(url, options = {}, isRetry = false) {
+  if (!(await ensureDriveToken())) {
+    const e = new Error('Google Drive is not connected.');
+    e.code = 'drive_disconnected';
+    throw e;
+  }
   const resp = await fetch(url, {
     ...options,
     headers: { ...(options.headers || {}), 'Authorization': `Bearer ${driveAccessToken}` },
   });
+  if (resp.status === 401 && !isRetry) {
+    // Token died early (revoked, clock skew): force one refresh and retry.
+    driveTokenExpiresAt = 0;
+    if (await refreshDriveToken()) return driveApiFetch(url, options, true);
+    const e = new Error('Google Drive is not connected.');
+    e.code = 'drive_disconnected';
+    throw e;
+  }
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Drive API error: HTTP ${resp.status} - ${text}`);
   }
   return resp;
 }
+
+// ---------- autosave + local drafts ----------
+// Every edit is (a) copied into this browser's storage within ~1.5s and
+// (b) pushed to the library (Drive or local). If the push fails -- Drive
+// disconnected, offline, anything -- the draft stays on this device, the
+// push is retried automatically (on reconnect, tab refocus, coming back
+// online, and every 30s), and reopening the chart restores the draft.
+// A failed save can no longer cost you your edits.
+
+let chartDirty = false;   // edits exist that haven't reached the library yet
+let chartRev = 0;         // bumped on every edit so a save can tell if more edits landed mid-save
+let autosaveTimer = null;
+let saveChain = Promise.resolve(true);
+let saveFailureNotified = false;
+const DRAFT_PREFIX = 'chartDraft:';
+
+function draftKeyFor(id) { return DRAFT_PREFIX + (id || 'new'); }
+function writeDraft() {
+  if (!currentData) return;
+  try {
+    localStorage.setItem(draftKeyFor(currentChartId), JSON.stringify({ data: currentData, savedAt: Date.now() }));
+  } catch (e) {}
+}
+function clearDraft(id) {
+  try { localStorage.removeItem(draftKeyFor(id)); } catch (e) {}
+}
+function readDraft(id) {
+  try {
+    const raw = localStorage.getItem(draftKeyFor(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function scheduleAutosave() {
+  chartDirty = true;
+  chartRev++;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => { writeDraft(); flushPendingSave(); }, 1500);
+}
+
+function flushPendingSave(manual) {
+  saveChain = saveChain.then(() => doSave(manual), () => doSave(manual));
+  return saveChain;
+}
+
+async function doSave(manual) {
+  if (!chartDirty || !currentData) return true;
+  const idAtStart = currentChartId;
+  const revAtStart = chartRev;
+  try {
+    const newId = await saveChartToLibrary(currentData, idAtStart);
+    if (currentChartId === idAtStart) {
+      if (!idAtStart) { clearDraft(null); currentChartId = newId; }
+      if (chartRev === revAtStart) {
+        chartDirty = false;
+        clearDraft(currentChartId);
+      } else {
+        writeDraft(); // more edits landed while saving; keep them safe too
+      }
+    }
+    saveFailureNotified = false;
+    return true;
+  } catch (e) {
+    console.error('Save failed', e);
+    if (currentChartId === idAtStart) writeDraft();
+    if (manual || !saveFailureNotified) {
+      saveFailureNotified = true;
+      showToast(e && e.code === 'drive_disconnected'
+        ? 'Drive is disconnected -- your work is saved on this device. Reconnect from the account menu.'
+        : "Couldn't reach Drive just now -- your work is safe on this device and will keep retrying.");
+    }
+    return false;
+  }
+}
+
+// Called when navigating away from an open chart.
+async function commitBeforeLeave() {
+  if (!chartDirty) return;
+  clearTimeout(autosaveTimer);
+  writeDraft();
+  await flushPendingSave();
+  chartDirty = false; // if the save failed, the draft is still on this device
+}
+
+setInterval(() => { if (chartDirty && currentUser) flushPendingSave(); }, 30000);
+window.addEventListener('online', () => { if (currentUser) { ensureDriveToken().then(() => flushPendingSave()); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    if (chartDirty) writeDraft();
+    return;
+  }
+  // Tab came back after sitting idle (maybe hours): refresh the Drive token
+  // right away, before any editing, and push anything still waiting.
+  if (currentUser && (driveSignedIn || driveWanted())) {
+    ensureDriveToken().then(() => flushPendingSave());
+  }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (chartDirty) {
+    writeDraft();
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 async function getChartsIndexFromDrive() {
   const resp = await driveApiFetch(
@@ -2610,8 +2817,13 @@ async function getChartsIndex() {
 }
 
 async function saveChartToLibrary(data, existingId) {
-  if (driveSignedIn) {
-    return await saveChartToDrive(data, existingId);
+  if (driveSignedIn || driveWanted()) {
+    if (await ensureDriveToken()) {
+      return await saveChartToDrive(data, existingId);
+    }
+    const e = new Error('Google Drive is not connected.');
+    e.code = 'drive_disconnected';
+    throw e;
   }
   const id = existingId || `c${Date.now()}`;
   localStorage.setItem(`chart:${id}`, JSON.stringify(data));
@@ -2844,6 +3056,7 @@ function renderPaywallView() {
 
 async function renderLibraryView() {
   if (!currentUser) { renderLoginView(); return; }
+  if (chartDirty) await commitBeforeLeave();
   setActiveTab('library');
   viewContainer.innerHTML = `
     <div class="view">
@@ -2903,12 +3116,26 @@ async function renderLibraryView() {
     card.addEventListener('click', async (e) => {
       if (e.target.hasAttribute('data-delete-id')) return;
       const id = card.getAttribute('data-id');
-      const data = await loadChartFromLibrary(id);
+      let data = null;
+      try { data = await loadChartFromLibrary(id); } catch (err) { console.error(err); }
+      // A leftover local draft means edits that never reached the library
+      // (failed save, closed tab) -- restore them and push them up.
+      const draft = readDraft(id);
+      const restored = !!(draft && draft.data);
+      if (restored) data = draft.data;
       if (data) {
         currentChartId = id;
         editMode = false;
         activeMarkTool = null;
+        chartDirty = false;
+        clearTimeout(autosaveTimer);
         renderChartView(data);
+        if (restored) {
+          showToast('Restored your unsaved changes');
+          scheduleAutosave();
+        }
+      } else {
+        showToast("Couldn't open that chart right now. Check your Drive connection.");
       }
     });
   });
@@ -2927,6 +3154,7 @@ async function renderLibraryView() {
 
 async function renderUploadView() {
   if (!currentUser) { renderLoginView(); return; }
+  if (chartDirty) await commitBeforeLeave();
   setActiveTab('new');
 
   const eligibility = await checkManagedEligibility();
@@ -3148,12 +3376,26 @@ async function renderUploadView() {
       // so anything that reset the view (losing wifi, an unexpected
       // re-render, closing the tab) lost it for good. Now it's durably
       // saved the moment it's generated, before anything else can happen.
-      const newChartId = await saveChartToLibrary(chartData, null);
+      let newChartId = null;
+      try {
+        newChartId = await saveChartToLibrary(chartData, null);
+      } catch (saveErr) {
+        // Drive unreachable: still open the chart (it just cost real money
+        // to generate). Autosave keeps it on this device and creates it in
+        // the library as soon as Drive is back.
+        console.error('Initial save failed', saveErr);
+      }
       processLogLine('Done. Opening chart...');
       currentChartId = newChartId;
+      chartDirty = false;
+      clearTimeout(autosaveTimer);
       editMode = false;
       activeMarkTool = null;
       renderChartView(chartData);
+      if (!newChartId) {
+        scheduleAutosave();
+        showToast('Chart ready -- Drive is disconnected, so it is held on this device until you reconnect.');
+      }
     } catch (err) {
       processLog.style.display = 'block'; // reveal technical detail so we can actually debug it
       if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
@@ -3927,8 +4169,12 @@ function renderChartView(data) {
   document.getElementById('backBtn').addEventListener('click', () => renderLibraryView());
   document.getElementById('printBtn').addEventListener('click', () => window.print());
   document.getElementById('saveBtn').addEventListener('click', async () => {
-    currentChartId = await saveChartToLibrary(currentData, currentChartId);
-    showToast('Saved to library');
+    clearTimeout(autosaveTimer);
+    chartDirty = true;
+    chartRev++;
+    writeDraft();
+    const ok = await flushPendingSave(true);
+    if (ok) showToast('Saved to library');
   });
   document.getElementById('modeToggleBtn').addEventListener('click', () => {
     displayMode = displayMode === 'numbers' ? 'chords' : 'numbers';
