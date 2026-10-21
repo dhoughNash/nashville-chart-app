@@ -1516,6 +1516,42 @@
     .bar-hairpin { top: -20px; width: 80px; height: 18px; }
   }
 
+  .copy-menu {
+    position: absolute;
+    z-index: 50;
+    min-width: 170px;
+    background: var(--paper, #fff);
+    border: 1px solid var(--ink-soft);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    font-family: 'Public Sans', sans-serif;
+  }
+  .copy-menu-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    padding: 4px 10px 6px;
+  }
+  .copy-menu-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+  }
+  .copy-menu-item:hover:not(:disabled) { background: rgba(0,0,0,0.08); }
+  .copy-menu-item:disabled { color: var(--ink-soft); cursor: default; opacity: 0.5; }
+  .copy-menu-meta { font-size: 11px; color: var(--ink-soft); }
+
   /* --- print / save-as-PDF --- */
   @media print {
     @page {
@@ -1539,7 +1575,7 @@
       print-color-adjust: exact;
     }
 
-    .topnav, .save-toast, .no-print, .add-section-row, .bar-controls, .section-controls {
+    .topnav, .save-toast, .no-print, .add-section-row, .bar-controls, .section-controls, .copy-menu {
       display: none !important;
     }
 
@@ -3817,6 +3853,128 @@ function splitSectionAtBar(secIdx, barIdx) {
   renderChartView(currentData);
 }
 
+// ---------- copy a repeated section from another one ----------
+// "Copy from..." on a section: pick any other section and this one becomes
+// an exact copy of its bars, including shapes (diamond/box/group/split) and
+// every overlay mark, tie and hairpin. Those three live OUTSIDE the bars
+// (keyed by section/bar position), so they're copied and re-pointed at the
+// target section here. The target keeps its own label (so CH2 stays CH2).
+function sectionHasContent(section) {
+  return (section.bars || []).some(b => (b && typeof b === 'object') || String(b == null ? '' : b).trim() !== '');
+}
+
+function copySectionFrom(targetIdx, sourceIdx) {
+  const target = currentData.sections[targetIdx];
+  const source = currentData.sections[sourceIdx];
+  if (!target || !source || targetIdx === sourceIdx) return;
+  snapshotForUndo();
+
+  target.bars = JSON.parse(JSON.stringify(source.bars));
+
+  const barKeyIn = (key, sec) => key.indexOf(sec + '-') === 0;
+
+  ['ties', 'hairpins'].forEach((field) => {
+    const old = currentData[field] || {};
+    const next = {};
+    Object.keys(old).forEach((key) => {
+      if (barKeyIn(key, targetIdx)) return;          // drop target's old ones
+      next[key] = old[key];
+    });
+    Object.keys(old).forEach((key) => {
+      if (!barKeyIn(key, sourceIdx)) return;          // copy source's, re-pointed
+      const barIdx = key.slice(String(sourceIdx).length + 1);
+      next[targetIdx + '-' + barIdx] = old[key];
+    });
+    if (Object.keys(next).length || currentData[field]) currentData[field] = next;
+  });
+
+  const oldMarks = currentData.marks || {};
+  const nextMarks = {};
+  Object.keys(oldMarks).forEach((key) => {
+    const path = JSON.parse(key);
+    if (path[0] === 'bar' && path[1] === targetIdx) return;
+    nextMarks[key] = oldMarks[key];
+  });
+  Object.keys(oldMarks).forEach((key) => {
+    const path = JSON.parse(key);
+    if (path[0] !== 'bar' || path[1] !== sourceIdx) return;
+    const newPath = [...path];
+    newPath[1] = targetIdx;
+    nextMarks[JSON.stringify(newPath)] = JSON.parse(JSON.stringify(oldMarks[key]));
+  });
+  if (Object.keys(nextMarks).length || currentData.marks) currentData.marks = nextMarks;
+
+  renderChartView(currentData);
+  showToast('Copied ' + (source.label || 'section') + ' into ' + (target.label || 'this section'));
+}
+
+function closeCopyMenu() {
+  const m = document.getElementById('copyFromMenu');
+  if (m) m.remove();
+  document.removeEventListener('mousedown', onCopyMenuOutside, true);
+  document.removeEventListener('keydown', onCopyMenuKey, true);
+}
+function onCopyMenuOutside(e) {
+  const m = document.getElementById('copyFromMenu');
+  if (m && !m.contains(e.target)) closeCopyMenu();
+}
+function onCopyMenuKey(e) {
+  if (e.key === 'Escape') closeCopyMenu();
+}
+
+function openCopyFromMenu(targetIdx, anchorEl) {
+  closeCopyMenu();
+  const menu = document.createElement('div');
+  menu.id = 'copyFromMenu';
+  menu.className = 'copy-menu no-print';
+  const title = document.createElement('div');
+  title.className = 'copy-menu-title';
+  title.textContent = 'Copy from…';
+  menu.appendChild(title);
+  let count = 0;
+  currentData.sections.forEach((sec, i) => {
+    if (i === targetIdx) return;
+    const n = (sec.bars || []).length;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-menu-item';
+    btn.disabled = n === 0 || !sectionHasContent(sec);
+    const name = document.createElement('span');
+    name.textContent = sec.label || 'Section ' + (i + 1);
+    const meta = document.createElement('span');
+    meta.className = 'copy-menu-meta';
+    meta.textContent = n + (n === 1 ? ' bar' : ' bars');
+    btn.appendChild(name);
+    btn.appendChild(meta);
+    btn.addEventListener('click', () => {
+      const target = currentData.sections[targetIdx];
+      closeCopyMenu();
+      if (sectionHasContent(target) &&
+          !confirm((target.label || 'This section') + ' already has chords. Replace them with ' + (sec.label || 'that section') + '\u2019s?')) {
+        return;
+      }
+      copySectionFrom(targetIdx, i);
+    });
+    menu.appendChild(btn);
+    count++;
+  });
+  if (!count) {
+    const none = document.createElement('div');
+    none.className = 'copy-menu-meta';
+    none.style.padding = '6px 10px';
+    none.textContent = 'No other sections yet';
+    menu.appendChild(none);
+  }
+  document.body.appendChild(menu);
+  const r = anchorEl.getBoundingClientRect();
+  menu.style.top = (window.scrollY + r.bottom + 4) + 'px';
+  menu.style.left = (window.scrollX + r.left) + 'px';
+  setTimeout(() => {
+    document.addEventListener('mousedown', onCopyMenuOutside, true);
+    document.addEventListener('keydown', onCopyMenuKey, true);
+  }, 0);
+}
+
 function mergeSectionUp(secIdx) {
   if (secIdx <= 0) return;
   snapshotForUndo();
@@ -4140,8 +4298,11 @@ function renderSection(section, secIdx) {
   const addBarBtnHtml = editMode
     ? `<button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a bar to this section">+ Bar</button>`
     : '';
+  const copyFromBtnHtml = editMode && (currentData.sections || []).length > 1
+    ? `<button class="section-ctrl-btn" data-copyfrom-sec="${secIdx}" title="Fill this section with a copy of another one">\u29c9 Copy from\u2026</button>`
+    : '';
   const controlsHtml = editMode
-    ? `<div class="section-controls">${addBarBtnHtml}${mergeBtnHtml}</div>`
+    ? `<div class="section-controls">${addBarBtnHtml}${mergeBtnHtml}${copyFromBtnHtml}</div>`
     : '';
   return `
     <div class="section-row">
@@ -4332,6 +4493,11 @@ function renderChartView(data) {
     const mergeBtn = e.target.closest('[data-merge-sec]');
     if (mergeBtn) {
       mergeSectionUp(parseInt(mergeBtn.dataset.mergeSec, 10));
+      return;
+    }
+    const copyFromBtn = e.target.closest('[data-copyfrom-sec]');
+    if (copyFromBtn) {
+      openCopyFromMenu(parseInt(copyFromBtn.dataset.copyfromSec, 10), copyFromBtn);
       return;
     }
     const addBarBtn = e.target.closest('[data-addbar-sec]');
