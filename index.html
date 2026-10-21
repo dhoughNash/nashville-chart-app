@@ -1596,8 +1596,8 @@
       /* THE setting for space between numbers: each bar sits in a column of
          this fixed width (was 1fr = stretched to fill the whole page). Space
          between two numerals = column width minus numeral width. Make the
-         58px smaller for tighter, larger for looser. */
-      grid-template-columns: repeat(4, 58px) 10px repeat(4, 58px);
+         48px smaller for tighter, larger for looser. */
+      grid-template-columns: repeat(4, 48px) 10px repeat(4, 48px);
       column-gap: 0;
       row-gap: 10px;
       justify-content: center;
@@ -1613,26 +1613,26 @@
 
     /* Number view: columns are ~80px wide and a numeral is only ~half its
        font size wide, so there is room to go much bigger. */
-    .bar-single { font-size: 46px; }
+    .bar-single { font-size: 36px; }
     .section-label { font-size: 24px; }
     .title-text { font-size: 36px; }
     .kt-chip .kt-value, .kt-select { font-size: 20px; }
-    .bar-diamond { width: 56px; height: 56px; }
-    .bar-diamond span { font-size: 30px; }
-    .bar-diamond.bar-diamond-group { width: 40px; height: 40px; }
-    .bar-diamond.bar-diamond-group span { font-size: 22px; }
-    .bar-box { width: 34px; height: 50px; }
-    .bar-box span { font-size: 20px; }
-    .bar-split { width: 30px; height: 30px; }
-    .bar-split .split-top, .bar-split .split-bottom { font-size: 15px; max-width: 28px; }
-    .bar-split.wide { width: 36px; height: 36px; }
-    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 16px; max-width: 34px; }
+    .bar-diamond { width: 46px; height: 46px; }
+    .bar-diamond span { font-size: 24px; }
+    .bar-diamond.bar-diamond-group { width: 34px; height: 34px; }
+    .bar-diamond.bar-diamond-group span { font-size: 18px; }
+    .bar-box { width: 28px; height: 42px; }
+    .bar-box span { font-size: 17px; }
+    .bar-split { width: 26px; height: 26px; }
+    .bar-split .split-top, .bar-split .split-bottom { font-size: 13px; max-width: 24px; }
+    .bar-split.wide { width: 30px; height: 30px; }
+    .bar-split.wide .split-top, .bar-split.wide .split-bottom { font-size: 13px; max-width: 28px; }
 
     /* two-chord underlined groups share one column, so their numerals
        are smaller than a lone numeral (a minor dash makes "6-" about as
        wide as the font is tall) */
-    .bar-group .bar-single { font-size: 28px; }
-    .mark-stop { width: 40px; height: 40px; }
+    .bar-group .bar-single { font-size: 22px; }
+    .mark-stop { width: 32px; height: 32px; }
     .sheet-header { height: 120px; margin-bottom: 20px; }
 
     /* Chord-name view: letters like "G#m7" are 3-4x wider than a numeral,
