@@ -4035,8 +4035,35 @@ function mergeSectionUp(secIdx) {
 }
 
 function addBarToSection(secIdx) {
+  // Inserts a blank bar at the START of the section (the per-bar "+" buttons
+  // handle adding after any other bar). Everything already in the section
+  // shifts over by one, so ties, hairpins and marks are re-indexed to keep
+  // pointing at the same chords they did before.
   snapshotForUndo();
-  currentData.sections[secIdx].bars.push('1');
+  currentData.sections[secIdx].bars.unshift('1');
+
+  ['ties', 'hairpins'].forEach((field) => {
+    if (!currentData[field]) return;
+    const next = {};
+    Object.keys(currentData[field]).forEach((key) => {
+      const [tSec, tBar] = key.split('-').map(Number);
+      next[tSec === secIdx ? `${tSec}-${tBar + 1}` : key] = currentData[field][key];
+    });
+    currentData[field] = next;
+  });
+
+  if (currentData.marks) {
+    const nextMarks = {};
+    Object.keys(currentData.marks).forEach((key) => {
+      const path = JSON.parse(key);
+      if (path[0] !== 'bar' || path[1] !== secIdx) { nextMarks[key] = currentData.marks[key]; return; }
+      const newPath = [...path];
+      newPath[2] += 1;
+      nextMarks[JSON.stringify(newPath)] = currentData.marks[key];
+    });
+    currentData.marks = nextMarks;
+  }
+
   renderChartView(currentData);
 }
 
@@ -4299,7 +4326,7 @@ function renderSection(section, secIdx) {
     ? `<button class="section-ctrl-btn" data-merge-sec="${secIdx}" title="Merge into the previous section">⌃ Merge up</button>`
     : '';
   const addBarBtnHtml = editMode
-    ? `<button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a bar to this section">+ Bar</button>`
+    ? `<button class="section-ctrl-btn" data-addbar-sec="${secIdx}" title="Add a blank bar at the beginning of this section">+ Bar at start</button>`
     : '';
   const copyFromBtnHtml = editMode && (currentData.sections || []).length > 1
     ? `<button class="section-ctrl-btn" data-copyfrom-sec="${secIdx}" title="Fill this section with a copy of another one">\u29c9 Copy from\u2026</button>`
