@@ -1216,7 +1216,10 @@
 
   .tool-palette {
     position: fixed;
-    left: 18px;
+    /* sits just outside the paper's left edge: the sheet is max 760px and
+       centered, so its left edge is 50% - 380px; the palette is ~52px wide
+       plus a 14px gap. max() keeps it on-screen on narrower windows. */
+    left: max(8px, calc(50% - 446px));
     top: 50%;
     transform: translateY(-50%);
     display: flex;
