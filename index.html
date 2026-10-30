@@ -284,6 +284,85 @@
   .login-toggle a { color: var(--brass); text-decoration: none; }
   .login-toggle a:hover { text-decoration: underline; }
 
+  .login-panel [hidden] { display: none !important; }
+
+  /* --- "New here?" sign-up callout --- */
+  .newhere {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 2px solid #5A4E22;
+  }
+  .newhere-title {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 22px;
+    line-height: 1.1;
+    text-transform: uppercase;
+    text-align: center;
+    color: #E4572E;
+    text-shadow: none;
+    margin-bottom: 6px;
+  }
+  .newhere-text {
+    font-family: 'Public Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+    color: var(--shell-text);
+    margin-bottom: 12px;
+  }
+  button.newhere-btn {
+    display: block;
+    width: 100%;
+    height: 50px;
+    padding: 0 8px;
+    background: #E4572E;
+    color: #fff;
+    border: 2px solid var(--ink);
+    border-radius: 0;
+    font-family: 'Public Sans', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  button.newhere-btn:hover { filter: brightness(1.08); }
+  button.newhere-btn.alt {
+    background: transparent;
+    color: var(--shell-text);
+    border-color: var(--shell-text);
+  }
+
+  /* --- "Check your inbox" panel --- */
+  .check-inbox-title {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 24px;
+    color: var(--brass);
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .check-inbox-text {
+    font-family: 'Public Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--shell-text);
+    text-align: center;
+    margin: 0 0 12px 0;
+  }
+  .check-inbox-text strong { color: var(--brass); word-break: break-all; }
+  .check-inbox-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .check-inbox-actions button.shell-btn { width: 100%; padding: 12px 16px; }
+  .check-inbox button.shell-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .check-inbox-note {
+    min-height: 16px;
+    font-size: 12px;
+    text-align: center;
+    margin-top: 12px;
+    color: var(--shell-text-dim);
+  }
+  .check-inbox-note.err { color: var(--red); }
+
   #loginErrorMsg {
     color: var(--red);
     font-size: 12px;
@@ -3011,47 +3090,166 @@ function showToast(msg) {
 
 // ---------- login view ----------
 
+let signupConfirmPending = false; // true while the "Check your inbox" panel is showing
+let resendTimer = null;
+
 function renderLoginView(prefillMode) {
-  const mode = prefillMode || 'signin'; // 'signin' | 'signup'
+  if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+  signupConfirmPending = false;
+  let mode = prefillMode === 'signup' ? 'signup' : 'signin'; // 'signin' | 'signup'
   viewContainer.innerHTML = `
     <div class="view login-view">
       <div class="login-panel">
         <img class="login-logo" src="/img/logo.png" alt="Nashville Chart Book">
         <div class="login-title" style="display:none">Nashville Chart Book</div>
-        <div class="login-subtitle">Sign in to continue</div>
-        <div class="field">
-          <label for="loginEmail">Email</label>
-          <input type="text" id="loginEmail" placeholder="you@example.com">
+        <div id="loginFormWrap">
+          <div class="login-subtitle" id="loginSubtitle"></div>
+          <div class="field">
+            <label for="loginEmail">Email</label>
+            <input type="text" id="loginEmail" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" placeholder="••••••••">
+          </div>
+          <div class="btn-row">
+            <button class="shell-btn" id="loginSubmitBtn"></button>
+          </div>
+          <div id="loginErrorMsg"></div>
+          <div class="newhere">
+            <div class="newhere-title" id="newHereTitle"></div>
+            <div class="newhere-text" id="newHereText"></div>
+            <button type="button" class="newhere-btn" id="newHereBtn"></button>
+          </div>
         </div>
-        <div class="field">
-          <label for="loginPassword">Password</label>
-          <input type="password" id="loginPassword" placeholder="••••••••">
+        <div class="check-inbox" id="checkInboxPanel" hidden>
+          <div class="check-inbox-title">Check your inbox</div>
+          <p class="check-inbox-text">We sent a confirmation link to <strong id="checkInboxEmail"></strong></p>
+          <p class="check-inbox-text">Tap the link in that email, then come back here and sign in. If it doesn't arrive, check your spam or junk folder.</p>
+          <div class="check-inbox-actions">
+            <button type="button" class="shell-btn" id="checkBackBtn">Back to Sign In</button>
+            <button type="button" class="shell-btn secondary" id="resendBtn">Resend email</button>
+          </div>
+          <div class="check-inbox-note" id="resendNote"></div>
         </div>
-        <div class="btn-row">
-          <button class="shell-btn" id="loginSubmitBtn">${mode === 'signup' ? 'Create Account' : 'Sign In'}</button>
-        </div>
-        <div class="login-toggle">
-          ${mode === 'signup'
-            ? `Already have an account? <a href="#" id="toggleToSignin">Sign in</a>`
-            : `Need an account? <a href="#" id="toggleToSignup">Create one</a>`}
-        </div>
-        <div id="loginErrorMsg"></div>
       </div>
     </div>
   `;
 
+  const formWrap = document.getElementById('loginFormWrap');
+  const subtitleEl = document.getElementById('loginSubtitle');
   const emailInput = document.getElementById('loginEmail');
   const passwordInput = document.getElementById('loginPassword');
   const submitBtn = document.getElementById('loginSubmitBtn');
   const errorMsg = document.getElementById('loginErrorMsg');
+  const newHereTitle = document.getElementById('newHereTitle');
+  const newHereText = document.getElementById('newHereText');
+  const newHereBtn = document.getElementById('newHereBtn');
+  const checkPanel = document.getElementById('checkInboxPanel');
+  const checkEmailEl = document.getElementById('checkInboxEmail');
+  const checkBackBtn = document.getElementById('checkBackBtn');
+  const resendBtn = document.getElementById('resendBtn');
+  const resendNote = document.getElementById('resendNote');
+  let pendingEmail = '';
+
+  const MAIN_LABEL = { signin: 'Sign In', signup: 'Sign Up' };
+  const BUSY_LABEL = { signin: 'Signing in...', signup: 'Creating account...' };
 
   function showLoginError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
 
-  const toggleLink = document.getElementById(mode === 'signup' ? 'toggleToSignin' : 'toggleToSignup');
-  toggleLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    renderLoginView(mode === 'signup' ? 'signin' : 'signup');
+  // Always derive the main button label from the CURRENT mode.
+  function resetSubmit() {
+    submitBtn.disabled = false;
+    submitBtn.textContent = MAIN_LABEL[mode];
+  }
+
+  function applyMode(newMode, keepError) {
+    mode = newMode;
+    subtitleEl.textContent = mode === 'signup' ? 'Create your account' : 'Sign in to continue';
+    if (!submitBtn.disabled) submitBtn.textContent = MAIN_LABEL[mode];
+    if (mode === 'signup') {
+      newHereTitle.textContent = 'Already have an account?';
+      newHereText.textContent = 'Sign in with your email and password.';
+      newHereBtn.textContent = 'Back to Sign In';
+      newHereBtn.classList.add('alt');
+    } else {
+      newHereTitle.textContent = 'New here?';
+      newHereText.textContent = 'Create a free account to get started.';
+      newHereBtn.textContent = 'Create Free Account';
+      newHereBtn.classList.remove('alt');
+    }
+    if (!keepError) errorMsg.style.display = 'none';
+  }
+  applyMode(mode);
+
+  newHereBtn.addEventListener('click', () => {
+    applyMode(mode === 'signup' ? 'signin' : 'signup');
   });
+
+  // ----- "Check your inbox" panel -----
+
+  function startResendLock(seconds) {
+    if (resendTimer) clearInterval(resendTimer);
+    let left = seconds;
+    resendBtn.disabled = true;
+    const tick = () => {
+      if (left <= 0) {
+        clearInterval(resendTimer);
+        resendTimer = null;
+        resendBtn.disabled = false;
+        resendBtn.textContent = 'Resend email';
+        return;
+      }
+      resendBtn.textContent = `Resend email (${left}s)`;
+      left--;
+    };
+    tick();
+    resendTimer = setInterval(tick, 1000);
+  }
+
+  function showCheckInbox(email) {
+    pendingEmail = email;
+    signupConfirmPending = true;
+    checkEmailEl.textContent = email;
+    resendNote.textContent = '';
+    resendNote.classList.remove('err');
+    formWrap.hidden = true;
+    checkPanel.hidden = false;
+    startResendLock(30);
+  }
+
+  checkBackBtn.addEventListener('click', () => {
+    signupConfirmPending = false;
+    if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+    checkPanel.hidden = true;
+    formWrap.hidden = false;
+    emailInput.value = pendingEmail;
+    passwordInput.value = '';
+    resetSubmit();
+    applyMode('signin');
+  });
+
+  resendBtn.addEventListener('click', async () => {
+    resendNote.classList.remove('err');
+    resendNote.textContent = '';
+    resendBtn.disabled = true;
+    try {
+      const { error } = await sb.auth.resend({
+        type: 'signup',
+        email: pendingEmail,
+        options: { emailRedirectTo: 'https://number-chart.masterbus.app/' }
+      });
+      if (error) throw error;
+      resendNote.textContent = 'Confirmation email sent again.';
+      startResendLock(30);
+    } catch (err) {
+      resendNote.classList.add('err');
+      resendNote.textContent = err.message || 'Could not resend. Try again in a moment.';
+      resendBtn.disabled = false;
+    }
+  });
+
+  // ----- main submit -----
 
   submitBtn.addEventListener('click', async () => {
     errorMsg.style.display = 'none';
@@ -3059,21 +3257,28 @@ function renderLoginView(prefillMode) {
     const password = passwordInput.value;
     if (!email || !password) { showLoginError('Enter both email and password.'); return; }
 
+    const requestMode = mode;
     submitBtn.disabled = true;
-    submitBtn.textContent = mode === 'signup' ? 'Creating account...' : 'Signing in...';
+    submitBtn.textContent = BUSY_LABEL[requestMode];
 
     try {
-      if (mode === 'signup') {
+      if (requestMode === 'signup') {
         const { data, error } = await sb.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: 'https://number-chart.masterbus.app/' }
         });
         if (error) throw error;
+        // Supabase returns a fake user with no identities when the email is already registered.
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          resetSubmit();
+          applyMode('signin', true);
+          showLoginError('That email already has an account. Try signing in instead.');
+          return;
+        }
         if (data.user && !data.session) {
-          showLoginError('Account created -- check your email to confirm before signing in.');
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Create Account';
+          resetSubmit();
+          showCheckInbox(email);
           return;
         }
       } else {
@@ -3083,8 +3288,7 @@ function renderLoginView(prefillMode) {
       // onAuthStateChange handles moving into the app once session is set
     } catch (err) {
       showLoginError(err.message || 'Something went wrong.');
-      submitBtn.disabled = false;
-      submitBtn.textContent = mode === 'signup' ? 'Create Account' : 'Sign In';
+      resetSubmit();
     }
   });
 }
@@ -4731,7 +4935,8 @@ sb.auth.onAuthStateChange((event, session) => {
   currentUser = newUser;
   updateUserStatusUI();
   if (!currentUser) {
-    renderLoginView();
+    // Don't wipe the "Check your inbox" panel with a fresh login render.
+    if (!signupConfirmPending) renderLoginView();
     return;
   }
   updateAuthUI();
