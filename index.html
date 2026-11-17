@@ -286,6 +286,18 @@
 
   .login-panel [hidden] { display: none !important; }
 
+  /* --- terms acceptance + purchase disclosures --- */
+  .terms-check { display:flex; gap:10px; align-items:flex-start; margin:4px 0 14px; font-size:13px; line-height:1.45; color:var(--shell-text); }
+  .terms-check input { margin-top:3px; width:auto; flex:none; accent-color:var(--brass); }
+  .terms-check a { color:var(--brass); }
+  .renew-note { font-size:12px; line-height:1.5; color:var(--shell-text-dim); text-align:center; margin:14px auto 0; max-width:620px; }
+  .renew-note a { color:var(--brass); }
+  .gate-overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .gate-box { background:var(--shell-panel); border:1px solid var(--shell-edge); border-radius:10px; max-width:440px; width:100%; padding:22px; color:var(--shell-text); }
+  .gate-box h2 { margin:0 0 10px; color:var(--brass); font-size:20px; }
+  .gate-box p { font-size:14px; line-height:1.55; margin:0 0 12px; }
+  .gate-box a { color:var(--brass); }
+
   /* --- "New here?" sign-up callout --- */
   .newhere {
     margin-top: 18px;
@@ -1914,6 +1926,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 let currentUser = null; // Supabase user object once signed in
+const TERMS_VERSION = '2026-11-17'; // bump when Terms/Privacy change materially
 let currentSubscription = null; // this user's row from the subscriptions table
 
 const STRIPE_PAYMENT_LINKS = {
@@ -3112,6 +3125,10 @@ function renderLoginView(prefillMode) {
             <label for="loginPassword">Password</label>
             <input type="password" id="loginPassword" placeholder="••••••••">
           </div>
+          <label class="terms-check" id="authTermsWrap" hidden>
+            <input type="checkbox" id="authTermsCheck">
+            <span>I am at least 18 and I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+          </label>
           <div class="btn-row">
             <button class="shell-btn" id="loginSubmitBtn"></button>
           </div>
@@ -3178,6 +3195,7 @@ function renderLoginView(prefillMode) {
       newHereBtn.textContent = 'Create Free Account';
       newHereBtn.classList.remove('alt');
     }
+    document.getElementById('authTermsWrap').hidden = (mode !== 'signup');
     if (!keepError) errorMsg.style.display = 'none';
   }
   applyMode(mode);
@@ -3258,6 +3276,10 @@ function renderLoginView(prefillMode) {
     if (!email || !password) { showLoginError('Enter both email and password.'); return; }
 
     const requestMode = mode;
+    if (requestMode === 'signup' && !document.getElementById('authTermsCheck').checked) {
+      showLoginError('Please confirm you are 18 or older and agree to the Terms of Service and Privacy Policy to create an account.');
+      return;
+    }
     submitBtn.disabled = true;
     submitBtn.textContent = BUSY_LABEL[requestMode];
 
@@ -3266,7 +3288,10 @@ function renderLoginView(prefillMode) {
         const { data, error } = await sb.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: 'https://number-chart.masterbus.app/' }
+          options: {
+            emailRedirectTo: 'https://number-chart.masterbus.app/',
+            data: { chartbook_terms_accepted_at: new Date().toISOString(), chartbook_terms_version: TERMS_VERSION }
+          }
         });
         if (error) throw error;
         // Supabase returns a fake user with no identities when the email is already registered.
@@ -3330,6 +3355,7 @@ function renderPaywallView() {
         ${tierCard('pro', 'Pro', '$29', 30)}
         ${tierCard('unlimited', 'Unlimited', '$79', 100)}
       </div>
+      <p class="renew-note">Plans are billed monthly through Stripe and renew automatically each month at the price shown until you cancel. Cancel any time from the billing portal link in this app or in your Stripe receipt; your plan stays active through the end of the paid period. Sales tax is calculated at checkout. Unused charts do not roll over. See the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> for refunds.</p>
       <div class="paywall-footer">
         <button class="shell-btn secondary" id="paywallRefreshBtn">I just subscribed -- check again</button>
         ${isActive ? `<a class="shell-btn secondary" href="https://billing.stripe.com/p/login/4gMdRbeAg8v50BL0MD9R600" target="_blank" rel="noopener">Manage or cancel subscription</a>` : ''}
@@ -4921,6 +4947,40 @@ function updateUserStatusUI() {
 // onAuthStateChange fires once immediately on subscription with whatever the
 // current session state already is, so this single listener handles both
 // the initial page-load check and any later sign-in/sign-out.
+// Existing accounts that never accepted (or accepted an older version) see a
+// one-time accept screen. Acceptance is stored in the user's auth metadata.
+function checkTerms(user) {
+  if (!user) return;
+  const md = user.user_metadata || {};
+  if (md.chartbook_terms_version === TERMS_VERSION) return;
+  if (document.getElementById('termsGate')) return;
+  const d = document.createElement('div');
+  d.className = 'gate-overlay';
+  d.id = 'termsGate';
+  d.innerHTML = `
+    <div class="gate-box">
+      <h2>Updated Terms</h2>
+      <p>We have updated the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> for Nashville Chart Book. Please review and accept them to keep using the app.</p>
+      <label class="terms-check"><input type="checkbox" id="gateTermsCheck"><span>I am at least 18 and I agree to the Terms of Service and Privacy Policy.</span></label>
+      <div class="btn-row">
+        <button class="shell-btn" id="gateAcceptBtn" disabled>Accept and continue</button>
+        <button class="shell-btn secondary" id="gateSignOutBtn">Log out</button>
+      </div>
+      <div id="gateErr" style="color:#e88;font-size:13px;margin-top:8px"></div>
+    </div>`;
+  document.body.appendChild(d);
+  const chk = d.querySelector('#gateTermsCheck'), btn = d.querySelector('#gateAcceptBtn');
+  chk.addEventListener('change', () => { btn.disabled = !chk.checked; });
+  d.querySelector('#gateSignOutBtn').addEventListener('click', async () => { d.remove(); await sb.auth.signOut(); });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const { data, error } = await sb.auth.updateUser({ data: { chartbook_terms_accepted_at: new Date().toISOString(), chartbook_terms_version: TERMS_VERSION } });
+    if (error) { d.querySelector('#gateErr').textContent = 'Could not save. Please try again.'; btn.disabled = false; return; }
+    if (data && data.user) currentUser = data.user;
+    d.remove();
+  });
+}
+
 sb.auth.onAuthStateChange((event, session) => {
   const newUser = session ? session.user : null;
   // Supabase deliberately re-fires this with event type 'SIGNED_IN' on
@@ -4941,6 +5001,7 @@ sb.auth.onAuthStateChange((event, session) => {
   }
   updateAuthUI();
   if (isGenuineNewSignIn) {
+    checkTerms(currentUser);
     attemptSilentSignIn();
     ensureAppAccess().then(() => loadSubscriptionStatus()).then(() => updateUserStatusUI());
     renderLibraryView();
