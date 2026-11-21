@@ -3376,6 +3376,7 @@ function renderPaywallView() {
       <p class="renew-note">Plans are billed monthly through Stripe and renew automatically each month at the price shown until you cancel. Cancel any time from the billing portal link in this app or in your Stripe receipt; your plan stays active through the end of the paid period. Sales tax is calculated at checkout. Unused plan charts do not roll over. A single chart is a one-time payment and never renews; it stays on your account until you use it. See the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> for refunds.</p>
       <div class="paywall-footer">
         <button class="shell-btn secondary" id="paywallRefreshBtn">I just paid -- check again</button>
+        <span class="renew-note" style="margin:0;align-self:center">(may take a few seconds)</span>
         ${isActive ? `<a class="shell-btn secondary" href="https://billing.stripe.com/p/login/4gMdRbeAg8v50BL0MD9R600" target="_blank" rel="noopener">Manage or cancel subscription</a>` : ''}
         <button class="auth-btn" id="paywallSignOutBtn">Log out</button>
       </div>
