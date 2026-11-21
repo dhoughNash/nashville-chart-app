@@ -292,6 +292,10 @@
   .terms-check a { color:var(--brass); }
   .renew-note { font-size:12px; line-height:1.5; color:var(--shell-text-dim); text-align:center; margin:14px auto 0; max-width:620px; }
   .renew-note a { color:var(--brass); }
+  .single-card { background:var(--shell-panel); border:1px solid var(--shell-edge); border-radius:10px; padding:18px 22px; margin:0 0 24px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; }
+  .single-card .single-title { font-weight:600; color:var(--shell-text); }
+  .single-card .single-sub { font-size:13px; color:var(--shell-text-dim); margin-top:2px; }
+  .single-card .single-balance { font-size:13px; color:var(--brass); margin-top:4px; }
   .gate-overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; }
   .gate-box { background:var(--shell-panel); border:1px solid var(--shell-edge); border-radius:10px; max-width:440px; width:100%; padding:22px; color:var(--shell-text); }
   .gate-box h2 { margin:0 0 10px; color:var(--brass); font-size:20px; }
@@ -1926,14 +1930,17 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 let currentUser = null; // Supabase user object once signed in
-const TERMS_VERSION = '2026-11-17'; // bump when Terms/Privacy change materially
+const TERMS_VERSION = '2026-11-21'; // bump when Terms/Privacy change materially
 let currentSubscription = null; // this user's row from the subscriptions table
 
 const STRIPE_PAYMENT_LINKS = {
   starter: 'https://buy.stripe.com/dRm4gB3VC5iTacl0MD9R603',
   pro: 'https://buy.stripe.com/00w5kFeAgcLlckt3YP9R604',
   unlimited: 'https://buy.stripe.com/fZu28tcs87r12JT7b19R605',
+  // One-time purchase of a single chart (no subscription).
+  single: 'https://buy.stripe.com/3cIbJ33VCbHh1FP66X9R608',
 };
+const SINGLE_CHART_PRICE_TEXT = '$2.50'; // must match the one-time price in Stripe
 
 function subscribeUrl(tier) {
   return `${STRIPE_PAYMENT_LINKS[tier]}?client_reference_id=${currentUser.id}`;
@@ -1972,6 +1979,9 @@ async function loadSubscriptionStatus() {
 
 function isSubscriptionActive() {
   return !!(currentSubscription && currentSubscription.status === 'active');
+}
+function singleCredits() {
+  return (currentSubscription && currentSubscription.single_credits > 0) ? currentSubscription.single_credits : 0;
 }
 
 const viewContainer = document.getElementById('viewContainer');
@@ -3355,9 +3365,17 @@ function renderPaywallView() {
         ${tierCard('pro', 'Pro', '$29', 30)}
         ${tierCard('unlimited', 'Unlimited', '$79', 100)}
       </div>
-      <p class="renew-note">Plans are billed monthly through Stripe and renew automatically each month at the price shown until you cancel. Cancel any time from the billing portal link in this app or in your Stripe receipt; your plan stays active through the end of the paid period. Sales tax is calculated at checkout. Unused charts do not roll over. See the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> for refunds.</p>
+      <div class="single-card">
+        <div>
+          <div class="single-title">Just need one chart?</div>
+          <div class="single-sub">${SINGLE_CHART_PRICE_TEXT} for a single chart. One-time payment, no subscription, and it never renews.</div>
+          ${singleCredits() ? `<div class="single-balance">You have ${singleCredits()} single chart${singleCredits() === 1 ? '' : 's'} ready to use.</div>` : ''}
+        </div>
+        <a class="shell-btn" href="${subscribeUrl('single')}" target="_blank" rel="noopener">Buy a single chart</a>
+      </div>
+      <p class="renew-note">Plans are billed monthly through Stripe and renew automatically each month at the price shown until you cancel. Cancel any time from the billing portal link in this app or in your Stripe receipt; your plan stays active through the end of the paid period. Sales tax is calculated at checkout. Unused plan charts do not roll over. A single chart is a one-time payment and never renews; it stays on your account until you use it. See the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> for refunds.</p>
       <div class="paywall-footer">
-        <button class="shell-btn secondary" id="paywallRefreshBtn">I just subscribed -- check again</button>
+        <button class="shell-btn secondary" id="paywallRefreshBtn">I just paid -- check again</button>
         ${isActive ? `<a class="shell-btn secondary" href="https://billing.stripe.com/p/login/4gMdRbeAg8v50BL0MD9R600" target="_blank" rel="noopener">Manage or cancel subscription</a>` : ''}
         <button class="auth-btn" id="paywallSignOutBtn">Log out</button>
       </div>
@@ -3369,12 +3387,15 @@ function renderPaywallView() {
     btn.disabled = true;
     btn.textContent = 'Checking...';
     await loadSubscriptionStatus();
+    updateUserStatusUI();
     if (isSubscriptionActive()) {
       renderLibraryView();
+    } else if (singleCredits() > 0) {
+      renderUploadView();
     } else {
-      showToast("Not showing as active yet -- Stripe can take a few seconds to notify us. Try again shortly.");
+      showToast("Not showing yet -- Stripe can take a few seconds to notify us. Try again shortly.");
       btn.disabled = false;
-      btn.textContent = 'I just subscribed -- check again';
+      btn.textContent = 'I just paid -- check again';
     }
   });
   document.getElementById('paywallSignOutBtn').addEventListener('click', signOutOfApp);
@@ -3495,7 +3516,7 @@ async function renderUploadView() {
   // the drop zone without narrating it.
   const managedBannerHtml = eligibility.eligible
     ? ''
-    : `<div class="managed-banner managed-banner-off">No active subscription and your free trial is used. <a href="#" id="goToPlansLink">Subscribe</a>, or use your own Music AI key below.</div>`;
+    : `<div class="managed-banner managed-banner-off">No active plan, no single charts left, and your free trial is used. <a href="#" id="goToPlansLink">Subscribe or buy a single chart</a>, or use your own Music AI key below.</div>`;
 
   viewContainer.innerHTML = `
     <div class="view">
@@ -4932,6 +4953,9 @@ function updateUserStatusUI() {
     tier.innerHTML = (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier)
       ? `<span class="user-tier">${currentSubscription.tier.charAt(0).toUpperCase() + currentSubscription.tier.slice(1)}</span>`
       : '';
+    if (singleCredits() > 0) {
+      tier.innerHTML += `<span class="user-tier">${singleCredits()} single</span>`;
+    }
     const sub = document.getElementById('manageSub');
     if (sub) sub.style.display = (currentSubscription && ['active','past_due'].includes(currentSubscription.status)) ? '' : 'none';
     acct.style.display = '';

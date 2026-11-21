@@ -23,6 +23,11 @@ const TIER_BY_PRICE_ID = {
   price_1U9nGqRru8MEHEIAkzm4HaMG: { tier: 'unlimited', chartsLimit: 100 },
 };
 
+// The one-time "single chart" price. Each paid checkout of it adds that many
+// charts (the quantity bought) to the buyer's account. Unlike the three plan
+// prices above, this one is a one-time payment, not a subscription.
+const SINGLE_CHART_PRICE_ID = 'price_1UeNQTRru8MEHEIAaFMlyFCN';
+
 exports.handler = async (event) => {
   const sig = event.headers['stripe-signature'];
   let stripeEvent;
@@ -40,6 +45,23 @@ exports.handler = async (event) => {
       const userId = session.client_reference_id;
       if (!userId) {
         return { statusCode: 200, body: 'No client_reference_id on session, ignoring.' };
+      }
+
+      // One-time payment (a single chart), not a subscription.
+      if (session.mode === 'payment') {
+        if (session.payment_status !== 'paid') {
+          return { statusCode: 200, body: 'Payment not completed yet, ignoring.' };
+        }
+        const lines = await stripe.checkout.sessions.listLineItems(session.id, { limit: 20 });
+        const credits = lines.data
+          .filter((li) => li.price && li.price.id === SINGLE_CHART_PRICE_ID)
+          .reduce((sum, li) => sum + (li.quantity || 0), 0);
+        if (!credits) {
+          // A one-time purchase from a different app on the same Stripe account.
+          return { statusCode: 200, body: "One-time purchase isn't a single chart, ignoring." };
+        }
+        await addSingleCredits(userId, session.id, credits, session.payment_intent);
+        return { statusCode: 200, body: 'OK' };
       }
 
       const subscription = await stripe.subscriptions.retrieve(session.subscription);
@@ -120,6 +142,28 @@ function billingPeriodChanged(previous) {
   if ('current_period_end' in previous) return true;
   const items = previous.items && previous.items.data;
   return Array.isArray(items) && items.some(i => i && 'current_period_end' in i);
+}
+
+// Adds purchased single charts to the account, once per Stripe session. The
+// database function does the work in one step, so a retried webhook can't
+// credit the same purchase twice.
+async function addSingleCredits(userId, sessionId, credits, paymentIntent) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/add_single_credits`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      'Content-Profile': DB_SCHEMA,
+    },
+    body: JSON.stringify({
+      p_user: userId,
+      p_session: sessionId,
+      p_credits: credits,
+      p_payment_intent: typeof paymentIntent === 'string' ? paymentIntent : null,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Supabase add_single_credits failed: ${resp.status} ${await resp.text()}`);
 }
 
 async function upsertByUserId(userId, data) {

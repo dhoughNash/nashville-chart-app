@@ -9,7 +9,8 @@
 //   1. Who is calling: the login token is verified with Supabase Auth.
 //   2. App access: the caller must be on this app's guest list
 //      (public.check_app_access, called with the CALLER'S token).
-//   3. Spend: a unit of usage (or the one-time free trial) is reserved when
+//   3. Spend: a unit of usage (a plan chart, the one-time free trial, or a
+//      purchased single-chart credit) is reserved when
 //      the chords job is submitted, atomically, so parallel requests can't
 //      overspend. If Music AI reports that job FAILED, the unit is refunded
 //      automatically. The sections job is a companion of one chords job.
@@ -238,7 +239,11 @@ function checkEligible(row) {
   if (!row.free_sample_used) {
     return { eligible: true, mode: 'trial' };
   }
-  return { eligible: false, reason: 'Free trial already used, and no active subscription. Please subscribe to continue.' };
+  // A purchased single chart (one-time payment, no subscription needed).
+  if (row.single_credits > 0) {
+    return { eligible: true, mode: 'credit' };
+  }
+  return { eligible: false, reason: 'Free trial already used, and no active plan or single chart. Please subscribe or buy a single chart to continue.' };
 }
 
 // Reserves one unit of usage (a subscription chart, or the one free trial)
@@ -256,6 +261,11 @@ async function reserveUnit(userId) {
       changed = await patchReturning(
         `subscriptions?user_id=eq.${userId}&status=eq.active&charts_used=eq.${row.charts_used}`,
         { charts_used: row.charts_used + 1 }
+      );
+    } else if (eligibility.mode === 'credit') {
+      changed = await patchReturning(
+        `subscriptions?user_id=eq.${userId}&single_credits=eq.${row.single_credits}&single_credits=gt.0`,
+        { single_credits: row.single_credits - 1 }
       );
     } else {
       changed = await patchReturning(
@@ -275,6 +285,19 @@ async function releaseUnit(userId, mode) {
       `subscriptions?user_id=eq.${userId}&free_sample_used=eq.true`,
       { free_sample_used: false }
     );
+    return;
+  }
+  if (mode === 'credit') {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const row = await fetchSubscriptionRow(userId);
+      if (!row) return;
+      const changed = await patchReturning(
+        `subscriptions?user_id=eq.${userId}&single_credits=eq.${row.single_credits}`,
+        { single_credits: row.single_credits + 1 }
+      );
+      if (changed.length === 1) return;
+    }
+    console.error(`Could not refund a single-chart credit for user ${userId} after 3 attempts.`);
     return;
   }
   for (let attempt = 0; attempt < 3; attempt++) {
