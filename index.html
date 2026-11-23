@@ -210,6 +210,10 @@
     color: var(--shell-text-dim);
   }
 
+  .nav-status { display:none; align-items:center; gap:6px; background:none; border:1px solid var(--shell-edge); border-radius:6px; padding:4px 9px; color:var(--shell-text); font-family:'Public Sans', sans-serif; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .nav-status:hover { border-color:var(--brass); }
+  .nav-status b { color:var(--brass); font-weight:700; }
+  @media (max-width: 560px) { .nav-status { font-size:11px; padding:3px 7px; } }
   .user-tier {
     font-family: 'Public Sans', sans-serif;
     font-size: 9.5px;
@@ -1804,6 +1808,7 @@
       <button class="nav-tab" id="tabNew">New Chart</button>
     </div>
     <div class="nav-right">
+      <button class="nav-status" id="navStatus" type="button" title="Purchase charts"></button>
       <button class="icon-btn" id="tabHelp" title="Help" aria-label="Help">?</button>
       <div class="acct" id="acct" style="display:none">
         <button class="acct-avatar" id="acctBtn" aria-haspopup="true" aria-expanded="false" aria-label="Account menu"><span id="acctInitial">?</span><i class="drive-dot" id="driveDot"></i></button>
@@ -3068,6 +3073,7 @@ function setActiveTab(tab) {
 
 tabLibrary.addEventListener('click', () => renderLibraryView());
 tabNew.addEventListener('click', () => renderUploadView());
+document.getElementById('navStatus').addEventListener('click', () => tabPlans.click());
 tabPlans.addEventListener('click', () => {
   if (!currentUser) { renderLoginView(); return; }
   setActiveTab('plans');
@@ -3406,6 +3412,7 @@ async function renderLibraryView() {
   if (!currentUser) { renderLoginView(); return; }
   if (chartDirty) await commitBeforeLeave();
   setActiveTab('library');
+  loadSubscriptionStatus().then(updateUserStatusUI);
   viewContainer.innerHTML = `
     <div class="view">
       <div class="view-header">
@@ -3504,6 +3511,7 @@ async function renderUploadView() {
   if (!currentUser) { renderLoginView(); return; }
   if (chartDirty) await commitBeforeLeave();
   setActiveTab('new');
+  loadSubscriptionStatus().then(updateUserStatusUI); // keep the top-bar chart count current
 
   const eligibility = await checkManagedEligibility();
   // Someone who has saved their own Music AI key always uses it first, so
@@ -4956,6 +4964,19 @@ function updateUserStatusUI() {
       : '';
     if (singleCredits() > 0) {
       tier.innerHTML += `<span class="user-tier">${singleCredits()} single</span>`;
+    }
+    // Plan and credits, visible in the top bar without opening the account menu.
+    const ns = document.getElementById('navStatus');
+    if (ns) {
+      const parts = [];
+      if (currentSubscription && currentSubscription.status === 'active' && currentSubscription.tier) {
+        const t = currentSubscription.tier.charAt(0).toUpperCase() + currentSubscription.tier.slice(1);
+        const left = Math.max(0, (currentSubscription.charts_limit || 0) - (currentSubscription.charts_used || 0));
+        parts.push(`${t}: <b>${left}</b> left`);
+      }
+      if (singleCredits() > 0) parts.push(`<b>${singleCredits()}</b> single chart${singleCredits() === 1 ? '' : 's'}`);
+      ns.innerHTML = parts.join(' &middot; ');
+      ns.style.display = parts.length ? 'inline-flex' : 'none';
     }
     const sub = document.getElementById('manageSub');
     if (sub) sub.style.display = (currentSubscription && ['active','past_due'].includes(currentSubscription.status)) ? '' : 'none';
