@@ -27,6 +27,9 @@ const TIER_BY_PRICE_ID = {
 // charts (the quantity bought) to the buyer's account. Unlike the three plan
 // prices above, this one is a one-time payment, not a subscription.
 const SINGLE_CHART_PRICE_ID = 'price_1UeNQTRru8MEHEIAaFMlyFCN';
+// The single-chart Payment Link. Matching on the link is the main check, because the price on a
+// link can differ from the one first created (Managed Payments, edits).
+const SINGLE_CHART_PAYMENT_LINK_ID = 'plink_1UeNUmRru8MEHEIAFhsDdrc2';
 
 exports.handler = async (event) => {
   const sig = event.headers['stripe-signature'];
@@ -53,9 +56,14 @@ exports.handler = async (event) => {
           return { statusCode: 200, body: 'Payment not completed yet, ignoring.' };
         }
         const lines = await stripe.checkout.sessions.listLineItems(session.id, { limit: 20 });
+        const isSingleLink = session.payment_link === SINGLE_CHART_PAYMENT_LINK_ID;
         const credits = lines.data
-          .filter((li) => li.price && li.price.id === SINGLE_CHART_PRICE_ID)
+          .filter((li) => isSingleLink || (li.price && li.price.id === SINGLE_CHART_PRICE_ID))
           .reduce((sum, li) => sum + (li.quantity || 0), 0);
+        if (!credits) {
+          console.log('Ignored one-time purchase:', session.id, 'payment_link=', session.payment_link,
+            'prices=', lines.data.map((li) => li.price && li.price.id).join(','));
+        }
         if (!credits) {
           // A one-time purchase from a different app on the same Stripe account.
           return { statusCode: 200, body: "One-time purchase isn't a single chart, ignoring." };
