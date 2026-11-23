@@ -539,7 +539,7 @@
     margin: 4px 0 0 0;
   }
 
-  button.shell-btn {
+  button.shell-btn, a.shell-btn {
     background: var(--brass);
     color: var(--shell-bg);
     border: none;
@@ -551,10 +551,11 @@
     letter-spacing: 0.02em;
     cursor: pointer;
   }
+  a.shell-btn { display: inline-block; text-decoration: none; text-align: center; box-sizing: border-box; }
 
-  button.shell-btn:hover { filter: brightness(1.1); }
+  button.shell-btn:hover, a.shell-btn:hover { filter: brightness(1.1); }
 
-  button.shell-btn.secondary {
+  button.shell-btn.secondary, a.shell-btn.secondary {
     background: transparent;
     color: var(--shell-text-dim);
     border: 1px solid #5A4E22;
